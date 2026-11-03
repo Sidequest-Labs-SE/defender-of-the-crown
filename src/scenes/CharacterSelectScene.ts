@@ -40,7 +40,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   create(): void {
     GameState.getInstance().setPhase('SELECT_CHARACTER');
 
-    // 1. Medieval Stone / Wood Wall Background
+    // 1. Medieval Stone Wall Background (640x400)
     this.createBackground();
 
     // 2. Header Bar
@@ -67,17 +67,16 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private createBackground(): void {
     const bg = this.add.graphics();
-    // Dark stone background
     bg.fillStyle(PALETTE.STONE_DARK, 1);
-    bg.fillRect(0, 0, 320, 200);
+    bg.fillRect(0, 0, 640, 400);
 
-    // Dithered stone wall pattern
+    // Stone wall mortar lines
     bg.fillStyle(PALETTE.SHADOW, 0.4);
-    for (let y = 0; y < 200; y += 8) {
-      bg.fillRect(0, y, 320, 1);
-      const offset = (y % 16 === 0) ? 0 : 16;
-      for (let x = offset; x < 320; x += 32) {
-        bg.fillRect(x, y, 1, 8);
+    for (let y = 0; y < 400; y += 16) {
+      bg.fillRect(0, y, 640, 2);
+      const offset = (y % 32 === 0) ? 0 : 32;
+      for (let x = offset; x < 640; x += 64) {
+        bg.fillRect(x, y, 2, 16);
       }
     }
   }
@@ -85,33 +84,32 @@ export class CharacterSelectScene extends Phaser.Scene {
   private createHeader(): void {
     const headerBg = this.add.graphics();
     headerBg.fillStyle(PALETTE.WOOD_DARK, 0.95);
-    headerBg.fillRect(10, 4, 300, 20);
-    headerBg.lineStyle(1, PALETTE.GOLD_DARK, 1);
-    headerBg.strokeRect(10, 4, 300, 20);
+    headerBg.fillRect(20, 8, 600, 32);
+    headerBg.lineStyle(2, PALETTE.GOLD_DARK, 1);
+    headerBg.strokeRect(20, 8, 600, 32);
 
-    // Inner gold studs
     headerBg.fillStyle(PALETTE.GOLD_BRIGHT, 1);
-    headerBg.fillRect(12, 6, 2, 2);
-    headerBg.fillRect(306, 6, 2, 2);
-    headerBg.fillRect(12, 20, 2, 2);
-    headerBg.fillRect(306, 20, 2, 2);
+    headerBg.fillRect(23, 11, 4, 4);
+    headerBg.fillRect(613, 11, 4, 4);
+    headerBg.fillRect(23, 33, 4, 4);
+    headerBg.fillRect(613, 33, 4, 4);
 
-    this.add.text(160, 14, '★ CHOOSE THY SAXON CHAMPION ★', {
+    this.add.text(320, 24, '★ CHOOSE THY SAXON CHAMPION ★', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '9px',
+      fontSize: '15px',
       fontStyle: 'bold',
       color: PALETTE_HEX.GOLD_BRIGHT,
-      letterSpacing: 1,
+      letterSpacing: 2,
     }).setOrigin(0.5);
   }
 
   private createLordCards(): void {
     const lords = Object.values(SAXON_LORDS);
-    const cardWidth = 68;
-    const cardHeight = 64;
-    const startX = 44;
-    const spacingX = 77;
-    const cardY = 58;
+    const cardWidth = 136;
+    const cardHeight = 118;
+    const startX = 86;
+    const spacingX = 156;
+    const cardY = 108;
 
     lords.forEach((lord, index) => {
       const cx = startX + index * spacingX;
@@ -119,57 +117,58 @@ export class CharacterSelectScene extends Phaser.Scene {
 
       // Card Background
       const bg = this.add.graphics();
-      bg.fillStyle(PALETTE.WOOD_DARK, 0.9);
+      bg.fillStyle(PALETTE.WOOD_DARK, 0.92);
       bg.fillRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
-      bg.lineStyle(1, PALETTE.WOOD_MID, 1);
+      bg.lineStyle(2, PALETTE.WOOD_MID, 1);
       bg.strokeRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
       container.add(bg);
 
-      // Card Portrait (scaled slightly to fit 36x36)
-      const portrait = this.add.image(-12, -8, `portrait_${lord.id}`);
-      portrait.setDisplaySize(34, 34);
+      // Card Portrait (52x52)
+      const portrait = this.add.image(-28, -14, `portrait_${lord.id}`);
+      portrait.setDisplaySize(54, 54);
       container.add(portrait);
 
-      // Lord Shield Icon
-      const shield = this.add.image(18, -8, `shield_${lord.id}`);
-      shield.setDisplaySize(20, 25);
+      // Lord Shield Icon (32x40)
+      const shield = this.add.image(30, -14, `shield_${lord.id}`);
+      shield.setDisplaySize(34, 42);
       container.add(shield);
 
       // Short name banner
       const namePlate = this.add.graphics();
-      namePlate.fillStyle(PALETTE.BLACK, 0.8);
-      namePlate.fillRect(-cardWidth / 2 + 2, 14, cardWidth - 4, 14);
+      namePlate.fillStyle(PALETTE.BLACK, 0.85);
+      namePlate.fillRect(-cardWidth / 2 + 4, 26, cardWidth - 8, 26);
       container.add(namePlate);
 
-      const nameText = this.add.text(0, 21, lord.name.split(' ')[0], {
+      const nameText = this.add.text(0, 39, lord.name.split(' ')[0], {
         fontFamily: 'Courier New, monospace',
-        fontSize: '8px',
+        fontSize: '13px',
         fontStyle: 'bold',
         color: PALETTE_HEX.PARCHMENT_LIGHT,
+        letterSpacing: 1,
       }).setOrigin(0.5);
       container.add(nameText);
 
       // Selection Glow Border
       const selectionBorder = this.add.graphics();
-      selectionBorder.lineStyle(2, PALETTE.GOLD_BRIGHT, 1);
-      selectionBorder.strokeRect(-cardWidth / 2 - 1, -cardHeight / 2 - 1, cardWidth + 2, cardHeight + 2);
+      selectionBorder.lineStyle(3, PALETTE.GOLD_BRIGHT, 1);
+      selectionBorder.strokeRect(-cardWidth / 2 - 2, -cardHeight / 2 - 2, cardWidth + 4, cardHeight + 4);
       selectionBorder.setVisible(false);
       container.add(selectionBorder);
 
-      // Interactive hit area (enlarged for touch screens & mobile browsers)
-      const hitZone = this.add.zone(0, 0, cardWidth + 6, cardHeight + 6);
+      // Interactive hit area (generous for mobile & desktop)
+      const hitZone = this.add.zone(0, 0, cardWidth + 8, cardHeight + 8);
       hitZone.setInteractive({ useHandCursor: true });
 
       hitZone.on('pointerover', () => {
         if (this.selectedLordId !== lord.id) {
-          bg.lineStyle(1, PALETTE.GOLD_DARK, 1);
+          bg.lineStyle(2, PALETTE.GOLD_DARK, 1);
           bg.strokeRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
         }
       });
 
       hitZone.on('pointerout', () => {
         if (this.selectedLordId !== lord.id) {
-          bg.lineStyle(1, PALETTE.WOOD_MID, 1);
+          bg.lineStyle(2, PALETTE.WOOD_MID, 1);
           bg.strokeRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
         }
       });
@@ -187,119 +186,125 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   private createDetailPanel(): void {
-    this.detailPanelContainer = this.add.container(160, 131);
+    this.detailPanelContainer = this.add.container(320, 248);
 
-    // Parchment Panel Background (296 x 68)
+    // Parchment Panel Background (600 x 128)
     const panelBg = this.add.graphics();
     // Drop shadow
     panelBg.fillStyle(PALETTE.BLACK, 0.8);
-    panelBg.fillRect(-147, -33, 296, 68);
+    panelBg.fillRect(-297, -61, 600, 128);
     // Wood border
     panelBg.fillStyle(PALETTE.WOOD_DARK, 1);
-    panelBg.fillRect(-148, -34, 296, 68);
+    panelBg.fillRect(-300, -64, 600, 128);
     // Parchment interior
     panelBg.fillStyle(PALETTE.PARCHMENT_LIGHT, 1);
-    panelBg.fillRect(-145, -31, 290, 62);
-    // Gold filigree line dividing Bio (left) and Stats (right)
-    panelBg.lineStyle(1, PALETTE.WOOD_MID, 0.7);
-    panelBg.strokeRect(-145, -31, 290, 62);
-    panelBg.lineBetween(25, -31, 25, 31);
+    panelBg.fillRect(-294, -58, 588, 116);
+    // Dividing line between Bio (left) and Stats (right)
+    panelBg.lineStyle(1, PALETTE.WOOD_MID, 0.8);
+    panelBg.strokeRect(-294, -58, 588, 116);
+    panelBg.lineBetween(50, -58, 50, 58);
     this.detailPanelContainer.add(panelBg);
 
-    // Left Column: Lord Dossier
-    this.lordNameText = this.add.text(-138, -27, '', {
+    // Left Column: Lord Dossier (width ~330)
+    this.lordNameText = this.add.text(-280, -50, '', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '8.5px',
+      fontSize: '15px',
       fontStyle: 'bold',
       color: PALETTE_HEX.WOOD_DARK,
+      letterSpacing: 1,
     });
     this.detailPanelContainer.add(this.lordNameText);
 
-    this.lordTitleText = this.add.text(-138, -17, '', {
+    this.lordTitleText = this.add.text(-280, -32, '', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '7px',
+      fontSize: '12px',
       fontStyle: 'italic',
       color: PALETTE_HEX.BLOOD_RED,
     });
     this.detailPanelContainer.add(this.lordTitleText);
 
-    this.lordHomeText = this.add.text(-138, -8, '', {
+    this.lordHomeText = this.add.text(-280, -17, '', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '7px',
+      fontSize: '11px',
+      fontStyle: 'bold',
       color: PALETTE_HEX.WOOD_MID,
     });
     this.detailPanelContainer.add(this.lordHomeText);
 
-    this.lordBioText = this.add.text(-138, 3, '', {
+    this.lordBioText = this.add.text(-280, 0, '', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '6.5px',
+      fontSize: '11px',
       color: PALETTE_HEX.BLACK,
-      wordWrap: { width: 160 },
-      lineSpacing: 1,
+      wordWrap: { width: 315 },
+      lineSpacing: 3,
     });
     this.detailPanelContainer.add(this.lordBioText);
 
-    this.lordQuoteText = this.add.text(-138, 22, '', {
+    this.lordQuoteText = this.add.text(-280, 36, '', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '6px',
+      fontSize: '10.5px',
       fontStyle: 'italic',
       color: PALETTE_HEX.WOOD_DARK,
-      wordWrap: { width: 160 },
+      wordWrap: { width: 315 },
     });
     this.detailPanelContainer.add(this.lordQuoteText);
 
     // Right Column: Classic Cinemaware Stats Breakdown
-    const statsHeader = this.add.text(32, -27, 'RATINGS & ABILITY', {
+    const statsHeader = this.add.text(65, -50, 'RATINGS & ABILITY', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '7.5px',
+      fontSize: '13px',
       fontStyle: 'bold',
       color: PALETTE_HEX.WOOD_DARK,
+      letterSpacing: 1,
     });
     this.detailPanelContainer.add(statsHeader);
 
     // Leadership Label
-    const ldrLbl = this.add.text(32, -15, 'LEADERSHIP', {
+    const ldrLbl = this.add.text(65, -28, 'LEADERSHIP', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '6.5px',
+      fontSize: '11px',
+      fontStyle: 'bold',
       color: PALETTE_HEX.WOOD_DARK,
     });
     this.detailPanelContainer.add(ldrLbl);
 
-    this.leadershipRatingText = this.add.text(140, -15, '', {
+    this.leadershipRatingText = this.add.text(280, -28, '', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '6.5px',
+      fontSize: '11px',
       fontStyle: 'bold',
       color: PALETTE_HEX.BLOOD_RED,
     }).setOrigin(1, 0);
     this.detailPanelContainer.add(this.leadershipRatingText);
 
     // Jousting Label
-    const jstLbl = this.add.text(32, -1, 'JOUSTING', {
+    const jstLbl = this.add.text(65, -2, 'JOUSTING', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '6.5px',
+      fontSize: '11px',
+      fontStyle: 'bold',
       color: PALETTE_HEX.WOOD_DARK,
     });
     this.detailPanelContainer.add(jstLbl);
 
-    this.joustingRatingText = this.add.text(140, -1, '', {
+    this.joustingRatingText = this.add.text(280, -2, '', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '6.5px',
+      fontSize: '11px',
       fontStyle: 'bold',
       color: PALETTE_HEX.BLOOD_RED,
     }).setOrigin(1, 0);
     this.detailPanelContainer.add(this.joustingRatingText);
 
     // Swordplay Label
-    const swdLbl = this.add.text(32, 13, 'SWORDPLAY', {
+    const swdLbl = this.add.text(65, 24, 'SWORDPLAY', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '6.5px',
+      fontSize: '11px',
+      fontStyle: 'bold',
       color: PALETTE_HEX.WOOD_DARK,
     });
     this.detailPanelContainer.add(swdLbl);
 
-    this.swordplayRatingText = this.add.text(140, 13, '', {
+    this.swordplayRatingText = this.add.text(280, 24, '', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '6.5px',
+      fontSize: '11px',
       fontStyle: 'bold',
       color: PALETTE_HEX.BLOOD_RED,
     }).setOrigin(1, 0);
@@ -312,67 +317,65 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private drawStatBar(g: Phaser.GameObjects.Graphics, x: number, y: number, value: number): void {
     const totalPips = 10;
-    const pipWidth = 9;
-    const pipHeight = 4;
-    const gap = 2;
+    const pipWidth = 17;
+    const pipHeight = 7;
+    const gap = 4;
 
     for (let i = 0; i < totalPips; i++) {
       const px = x + i * (pipWidth + gap);
       if (i < value) {
-        // Filled pip
         g.fillStyle(PALETTE.BLOOD_RED, 1);
         g.fillRect(px, y, pipWidth, pipHeight);
-        g.fillStyle(PALETTE.GOLD_BRIGHT, 0.6);
-        g.fillRect(px, y, pipWidth, 1);
+        g.fillStyle(PALETTE.GOLD_BRIGHT, 0.7);
+        g.fillRect(px, y, pipWidth, 2);
       } else {
-        // Empty pip
-        g.fillStyle(PALETTE.PARCHMENT_DARK, 0.6);
+        g.fillStyle(PALETTE.PARCHMENT_DARK, 0.7);
         g.fillRect(px, y, pipWidth, pipHeight);
       }
-      g.lineStyle(1, PALETTE.WOOD_DARK, 0.7);
+      g.lineStyle(1, PALETTE.WOOD_DARK, 0.8);
       g.strokeRect(px, y, pipWidth, pipHeight);
     }
   }
 
   private createConfirmButton(): void {
-    this.confirmBtnContainer = this.add.container(160, 182);
+    this.confirmBtnContainer = this.add.container(320, 362);
 
-    const btnWidth = 200;
-    const btnHeight = 22;
+    const btnWidth = 380;
+    const btnHeight = 36;
 
     const bg = this.add.graphics();
     // Drop shadow
-    bg.fillStyle(PALETTE.BLACK, 0.7);
-    bg.fillRect(-btnWidth / 2 + 2, -btnHeight / 2 + 2, btnWidth, btnHeight);
+    bg.fillStyle(PALETTE.BLACK, 0.75);
+    bg.fillRect(-btnWidth / 2 + 3, -btnHeight / 2 + 3, btnWidth, btnHeight);
     // Button body
     bg.fillStyle(PALETTE.WOOD_DARK, 1);
     bg.fillRect(-btnWidth / 2, -btnHeight / 2, btnWidth, btnHeight);
     // Gold trim
-    bg.lineStyle(1, PALETTE.GOLD_DARK, 1);
+    bg.lineStyle(2, PALETTE.GOLD_DARK, 1);
     bg.strokeRect(-btnWidth / 2, -btnHeight / 2, btnWidth, btnHeight);
     this.confirmBtnContainer.add(bg);
 
     const btnText = this.add.text(0, 0, '⚔  SWEAR OATH / BEGIN CAMPAIGN  ⚔', {
       fontFamily: 'Courier New, monospace',
-      fontSize: '8px',
+      fontSize: '13px',
       fontStyle: 'bold',
       color: PALETTE_HEX.GOLD_BRIGHT,
-      letterSpacing: 0.5,
+      letterSpacing: 1,
     }).setOrigin(0.5);
     this.confirmBtnContainer.add(btnText);
 
-    // Enlarged touch target for mobile and desktop
-    const hitZone = this.add.zone(0, 0, btnWidth + 10, btnHeight + 8);
+    // Generous touch target
+    const hitZone = this.add.zone(0, 0, btnWidth + 12, btnHeight + 10);
     hitZone.setInteractive({ useHandCursor: true });
 
     hitZone.on('pointerover', () => {
-      bg.lineStyle(1, PALETTE.GOLD_BRIGHT, 1);
+      bg.lineStyle(2, PALETTE.GOLD_BRIGHT, 1);
       bg.strokeRect(-btnWidth / 2, -btnHeight / 2, btnWidth, btnHeight);
       btnText.setColor(PALETTE_HEX.PARCHMENT_LIGHT);
     });
 
     hitZone.on('pointerout', () => {
-      bg.lineStyle(1, PALETTE.GOLD_DARK, 1);
+      bg.lineStyle(2, PALETTE.GOLD_DARK, 1);
       bg.strokeRect(-btnWidth / 2, -btnHeight / 2, btnWidth, btnHeight);
       btnText.setColor(PALETTE_HEX.GOLD_BRIGHT);
     });
@@ -407,16 +410,14 @@ export class CharacterSelectScene extends Phaser.Scene {
 
     // Redraw Stat Bars
     this.statBarsGraphics.clear();
-    this.drawStatBar(this.statBarsGraphics, 32, -7, lord.leadership);
-    this.drawStatBar(this.statBarsGraphics, 32, 7, lord.jousting);
-    this.drawStatBar(this.statBarsGraphics, 32, 21, lord.swordplay);
+    this.drawStatBar(this.statBarsGraphics, 65, -16, lord.leadership);
+    this.drawStatBar(this.statBarsGraphics, 65, 10, lord.jousting);
+    this.drawStatBar(this.statBarsGraphics, 65, 36, lord.swordplay);
   }
 
   private startCampaign(): void {
-    // 1. Initialize GameState for the selected lord
     GameState.getInstance().startNewCampaign(this.selectedLordId);
 
-    // 2. Transition to MapScene
     this.cameras.main.fadeOut(300, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       this.scene.start('MapScene');

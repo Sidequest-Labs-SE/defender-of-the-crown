@@ -6,13 +6,14 @@ import { MapScene } from './scenes/MapScene';
 
 /**
  * Defender of the Crown - Amiga 1986 Modernized Remake
- * Main Entry Point with Responsive Low-Res 320x200 Pixel-Art Scaling Pipeline
+ * Upgraded Amiga Hi-Res 640x400 Pixel Pipeline (16:10 Aspect Ratio)
+ * Crisp typography, detailed heraldry, and responsive full-screen scaling.
  */
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'phaser-canvas',
-  width: 320,
-  height: 200,
+  width: 640,
+  height: 400,
   pixelArt: true,
   roundPixels: true,
   antialias: false,
@@ -20,8 +21,8 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: 320,
-    height: 200,
+    width: 640,
+    height: 400,
   },
   scene: [BootScene, TitleScene, CharacterSelectScene, MapScene],
 };

@@ -3,8 +3,8 @@ import { PALETTE } from '../data/palette';
 
 /**
  * PixelArtGenerator
- * Generates all 1986 Amiga OCS pixel-art textures procedurally using Phaser Graphics.
- * Employs classic Amiga 2x2 and checkerboard dithering to simulate deep 32-color palettes.
+ * Procedural Amiga OCS Pixel-Art Generator upgraded to 640x400 (Amiga Hi-Res).
+ * Provides crisp readability, authentic 32-color dithering, and rich medieval heraldry.
  */
 export class PixelArtGenerator {
   /**
@@ -20,11 +20,9 @@ export class PixelArtGenerator {
     colorB: number,
     pattern: 'checker' | 'sparse' | 'dense' = 'checker'
   ): void {
-    // Fill background with colorA
     g.fillStyle(colorA, 1);
     g.fillRect(x, y, w, h);
 
-    // Dither colorB over top
     g.fillStyle(colorB, 1);
     for (let py = 0; py < h; py++) {
       for (let px = 0; px < w; px++) {
@@ -44,7 +42,7 @@ export class PixelArtGenerator {
   }
 
   /**
-   * Generates the iconic Title Screen Castle Siege backdrop (320x200).
+   * Generates the iconic Title Screen Castle Siege backdrop (640x400).
    */
   public static createTitleBackdrop(scene: Phaser.Scene): void {
     const key = 'title_backdrop';
@@ -52,300 +50,200 @@ export class PixelArtGenerator {
 
     const g = scene.make.graphics({ x: 0, y: 0 });
 
-    // 1. Sky Gradient with Dithered Bands
+    // 1. Sky Gradient with Dithered Bands (640 x 400)
     // Band 1: Deep Black / Midnight
     g.fillStyle(PALETTE.BLACK, 1);
-    g.fillRect(0, 0, 320, 35);
+    g.fillRect(0, 0, 640, 70);
 
     // Band 1 -> 2 Dither
-    this.drawDitheredRect(g, 0, 30, 320, 10, PALETTE.BLACK, PALETTE.SHADOW, 'checker');
+    this.drawDitheredRect(g, 0, 65, 640, 20, PALETTE.BLACK, PALETTE.SHADOW, 'checker');
 
     // Band 2: Deep Night Blue
     g.fillStyle(PALETTE.SHADOW, 1);
-    g.fillRect(0, 40, 320, 25);
+    g.fillRect(0, 85, 640, 50);
 
     // Band 2 -> 3 Dither
-    this.drawDitheredRect(g, 0, 60, 320, 10, PALETTE.SHADOW, PALETTE.SKY_NIGHT, 'checker');
+    this.drawDitheredRect(g, 0, 130, 640, 20, PALETTE.SHADOW, PALETTE.SKY_NIGHT, 'checker');
 
     // Band 3: Dark Blue
     g.fillStyle(PALETTE.SKY_NIGHT, 1);
-    g.fillRect(0, 70, 320, 30);
+    g.fillRect(0, 150, 640, 60);
 
     // Band 3 -> 4 Dither
-    this.drawDitheredRect(g, 0, 95, 320, 10, PALETTE.SKY_NIGHT, PALETTE.SKY_MID, 'checker');
+    this.drawDitheredRect(g, 0, 200, 640, 20, PALETTE.SKY_NIGHT, PALETTE.SKY_MID, 'checker');
 
     // Band 4: Horizon Blue
     g.fillStyle(PALETTE.SKY_MID, 1);
-    g.fillRect(0, 105, 320, 25);
+    g.fillRect(0, 220, 640, 50);
 
     // 2. Full Autumn Moon
-    const moonX = 250;
-    const moonY = 38;
-    const moonR = 16;
+    const moonX = 500;
+    const moonY = 75;
+    const moonR = 30;
     // Outer glow
     g.fillStyle(PALETTE.GOLD_DARK, 0.4);
-    g.fillCircle(moonX, moonY, moonR + 3);
+    g.fillCircle(moonX, moonY, moonR + 6);
     // Moon body
     g.fillStyle(PALETTE.PARCHMENT_LIGHT, 1);
     g.fillCircle(moonX, moonY, moonR);
     // Moon craters / texture
     g.fillStyle(PALETTE.PARCHMENT_DARK, 1);
-    g.fillCircle(moonX - 4, moonY - 3, 4);
-    g.fillCircle(moonX + 5, moonY + 4, 3);
-    g.fillCircle(moonX + 2, moonY - 5, 2);
+    g.fillCircle(moonX - 8, moonY - 6, 7);
+    g.fillCircle(moonX + 10, moonY + 8, 6);
+    g.fillCircle(moonX + 4, moonY - 10, 4);
 
     // 3. Distant Misty Hills
     g.fillStyle(PALETTE.FOLIAGE_DARK, 1);
     g.beginPath();
-    g.moveTo(0, 120);
-    g.lineTo(80, 105);
-    g.lineTo(160, 115);
-    g.lineTo(240, 102);
-    g.lineTo(320, 112);
-    g.lineTo(320, 135);
-    g.lineTo(0, 135);
+    g.moveTo(0, 240);
+    g.lineTo(160, 210);
+    g.lineTo(320, 230);
+    g.lineTo(480, 205);
+    g.lineTo(640, 225);
+    g.lineTo(640, 270);
+    g.lineTo(0, 270);
     g.closePath();
     g.fillPath();
 
-    this.drawDitheredRect(g, 0, 125, 320, 8, PALETTE.FOLIAGE_DARK, PALETTE.FOLIAGE_MID, 'checker');
+    this.drawDitheredRect(g, 0, 250, 640, 16, PALETTE.FOLIAGE_DARK, PALETTE.FOLIAGE_MID, 'checker');
 
     // 4. Foreground Slopes / Valley
     g.fillStyle(PALETTE.FOLIAGE_MID, 1);
     g.beginPath();
-    g.moveTo(0, 133);
-    g.lineTo(110, 128);
-    g.lineTo(210, 135);
-    g.lineTo(320, 128);
-    g.lineTo(320, 200);
-    g.lineTo(0, 200);
+    g.moveTo(0, 265);
+    g.lineTo(220, 255);
+    g.lineTo(420, 270);
+    g.lineTo(640, 255);
+    g.lineTo(640, 400);
+    g.lineTo(0, 400);
     g.closePath();
     g.fillPath();
 
-    // Foliage highlights & dithered shadows
-    this.drawDitheredRect(g, 0, 145, 120, 55, PALETTE.FOLIAGE_MID, PALETTE.FOLIAGE_LIGHT, 'sparse');
-    this.drawDitheredRect(g, 120, 155, 200, 45, PALETTE.FOLIAGE_MID, PALETTE.FOLIAGE_DARK, 'checker');
+    this.drawDitheredRect(g, 0, 290, 240, 110, PALETTE.FOLIAGE_MID, PALETTE.FOLIAGE_LIGHT, 'sparse');
+    this.drawDitheredRect(g, 240, 310, 400, 90, PALETTE.FOLIAGE_MID, PALETTE.FOLIAGE_DARK, 'checker');
 
-    // 5. Majestic Castle Silhouette on the Hill (Left-Center, x: 20-130)
+    // 5. Majestic Castle Fortress on the Hill (Left-Center, x: 70-260)
     // Castle Base Rock
     g.fillStyle(PALETTE.STONE_DARK, 1);
-    g.fillRect(35, 122, 100, 40);
+    g.fillRect(70, 244, 200, 80);
 
-    // Main Keep / Towers
     // Left Tower
     g.fillStyle(PALETTE.STONE_DARK, 1);
-    g.fillRect(40, 80, 22, 50);
+    g.fillRect(80, 160, 44, 100);
     // Crenelations Left Tower
     g.fillStyle(PALETTE.STONE_MID, 1);
-    g.fillRect(40, 77, 6, 4);
-    g.fillRect(48, 77, 6, 4);
-    g.fillRect(56, 77, 6, 4);
+    g.fillRect(80, 154, 12, 8);
+    g.fillRect(96, 154, 12, 8);
+    g.fillRect(112, 154, 12, 8);
     // Shading on tower wall
     g.fillStyle(PALETTE.STONE_LIGHT, 1);
-    g.fillRect(40, 81, 3, 48);
+    g.fillRect(80, 162, 5, 96);
 
     // Right Tower (Taller)
     g.fillStyle(PALETTE.STONE_DARK, 1);
-    g.fillRect(100, 70, 26, 60);
+    g.fillRect(200, 140, 52, 120);
     // Crenelations Right Tower
     g.fillStyle(PALETTE.STONE_MID, 1);
-    g.fillRect(100, 66, 6, 5);
-    g.fillRect(110, 66, 6, 5);
-    g.fillRect(120, 66, 6, 5);
+    g.fillRect(200, 132, 12, 10);
+    g.fillRect(220, 132, 12, 10);
+    g.fillRect(240, 132, 12, 10);
     // Tower highlights
     g.fillStyle(PALETTE.STONE_LIGHT, 1);
-    g.fillRect(100, 71, 3, 58);
+    g.fillRect(200, 142, 5, 116);
 
     // Central Curtain Wall
     g.fillStyle(PALETTE.STONE_MID, 1);
-    g.fillRect(62, 92, 38, 38);
+    g.fillRect(124, 184, 76, 76);
     // Wall crenelations
     g.fillStyle(PALETTE.STONE_LIGHT, 1);
-    g.fillRect(63, 89, 5, 4);
-    g.fillRect(73, 89, 5, 4);
-    g.fillRect(83, 89, 5, 4);
-    g.fillRect(93, 89, 5, 4);
+    g.fillRect(126, 178, 10, 8);
+    g.fillRect(146, 178, 10, 8);
+    g.fillRect(166, 178, 10, 8);
+    g.fillRect(186, 178, 10, 8);
 
     // Castle Gatehouse / Portcullis
     g.fillStyle(PALETTE.BLACK, 1);
-    g.fillRect(74, 110, 14, 20);
+    g.fillRect(148, 220, 28, 40);
     // Portcullis iron bars
     g.fillStyle(PALETTE.STONE_LIGHT, 1);
-    g.fillRect(77, 112, 1, 18);
-    g.fillRect(80, 112, 1, 18);
-    g.fillRect(83, 112, 1, 18);
-    g.fillRect(74, 116, 14, 1);
-    g.fillRect(74, 122, 14, 1);
+    g.fillRect(154, 224, 2, 36);
+    g.fillRect(160, 224, 2, 36);
+    g.fillRect(166, 224, 2, 36);
+    g.fillRect(148, 232, 28, 2);
+    g.fillRect(148, 244, 28, 2);
 
     // Castle Windows & Arrow Slits glowing with torchlight
     g.fillStyle(PALETTE.GOLD_BRIGHT, 1);
-    g.fillRect(48, 88, 3, 8);
-    g.fillRect(111, 78, 3, 8);
-    g.fillRect(111, 95, 3, 8);
-    g.fillRect(72, 98, 2, 5);
-    g.fillRect(88, 98, 2, 5);
+    g.fillRect(96, 176, 6, 16);
+    g.fillRect(222, 156, 6, 16);
+    g.fillRect(222, 190, 6, 16);
+    g.fillRect(144, 196, 4, 10);
+    g.fillRect(176, 196, 4, 10);
 
-    // Banner flying atop the main keep
+    // Royal Banner flying atop the main keep
     g.fillStyle(PALETTE.WOOD_DARK, 1);
-    g.fillRect(112, 53, 2, 14); // Flagpole
+    g.fillRect(224, 106, 4, 28); // Flagpole
     g.fillStyle(PALETTE.BLOOD_RED, 1);
-    g.fillTriangle(114, 53, 130, 58, 114, 63); // Pennant
+    g.fillTriangle(228, 106, 260, 116, 228, 126); // Pennant
 
-    // 6. Siege Trebuchet / Catapult in Foreground (Right side, x: 230-290)
+    // 6. Siege Trebuchet in Foreground (Right side, x: 470-580)
     // Wooden Frame
     g.fillStyle(PALETTE.WOOD_DARK, 1);
     // Base beams
-    g.fillRect(235, 168, 48, 5);
+    g.fillRect(470, 336, 96, 10);
     // A-Frame supports
     g.beginPath();
-    g.moveTo(240, 168);
-    g.lineTo(258, 140);
-    g.lineTo(262, 140);
-    g.lineTo(276, 168);
-    g.lineTo(271, 168);
-    g.lineTo(260, 144);
-    g.lineTo(245, 168);
+    g.moveTo(480, 336);
+    g.lineTo(516, 280);
+    g.lineTo(524, 280);
+    g.lineTo(552, 336);
+    g.lineTo(542, 336);
+    g.lineTo(520, 288);
+    g.lineTo(490, 336);
     g.closePath();
     g.fillPath();
-    // Throwing Beam (pointing toward castle)
+
+    // Throwing Beam
     g.fillStyle(PALETTE.WOOD_MID, 1);
     g.beginPath();
-    g.moveTo(280, 160); // Counterweight end
-    g.lineTo(230, 128); // Sling end high
-    g.lineTo(232, 125);
-    g.lineTo(282, 157);
+    g.moveTo(560, 320); // Counterweight end
+    g.lineTo(460, 256); // Sling end high
+    g.lineTo(464, 250);
+    g.lineTo(564, 314);
     g.closePath();
     g.fillPath();
-    // Heavy Counterweight Box
-    g.fillStyle(PALETTE.STONE_DARK, 1);
-    g.fillRect(275, 156, 12, 10);
-    g.fillStyle(PALETTE.BLACK, 1);
-    g.strokeRect(275, 156, 12, 10);
 
-    // 7. Torches burning on the ground / siege camp
+    // Counterweight Box
+    g.fillStyle(PALETTE.STONE_DARK, 1);
+    g.fillRect(550, 312, 24, 20);
+    g.fillStyle(PALETTE.BLACK, 1);
+    g.strokeRect(550, 312, 24, 20);
+
+    // 7. Torches burning on the ground
     g.fillStyle(PALETTE.WOOD_DARK, 1);
-    g.fillRect(215, 162, 2, 10);
-    g.fillRect(298, 166, 2, 10);
+    g.fillRect(430, 324, 4, 20);
+    g.fillRect(596, 332, 4, 20);
     // Torch Flames
     g.fillStyle(PALETTE.GOLD_BRIGHT, 1);
-    g.fillCircle(216, 160, 3);
-    g.fillCircle(299, 164, 3);
+    g.fillCircle(432, 320, 6);
+    g.fillCircle(598, 328, 6);
     g.fillStyle(PALETTE.BLOOD_RED, 1);
-    g.fillRect(215, 161, 2, 2);
-    g.fillRect(298, 165, 2, 2);
+    g.fillRect(430, 322, 4, 4);
+    g.fillRect(596, 330, 4, 4);
 
     // 8. Distant Campfires
     g.fillStyle(PALETTE.GOLD_BRIGHT, 0.8);
-    g.fillRect(175, 137, 3, 2);
-    g.fillRect(190, 140, 2, 2);
+    g.fillRect(350, 274, 6, 4);
+    g.fillRect(380, 280, 4, 4);
     g.fillStyle(PALETTE.BLOOD_RED, 0.8);
-    g.fillRect(176, 136, 1, 1);
+    g.fillRect(352, 272, 2, 2);
 
-    g.generateTexture(key, 320, 200);
+    g.generateTexture(key, 640, 400);
     g.destroy();
   }
 
   /**
-   * Generates a medieval ornamental stone / parchment panel.
-   */
-  public static createPanelTexture(
-    scene: Phaser.Scene,
-    key: string,
-    w: number,
-    h: number,
-    fillColor = PALETTE.PARCHMENT_LIGHT,
-    borderColor = PALETTE.WOOD_DARK
-  ): void {
-    if (scene.textures.exists(key)) return;
-
-    const g = scene.make.graphics({ x: 0, y: 0 });
-
-    // Outer shadow
-    g.fillStyle(PALETTE.BLACK, 0.6);
-    g.fillRect(2, 2, w, h);
-
-    // Outer dark border
-    g.fillStyle(borderColor, 1);
-    g.fillRect(0, 0, w, h);
-
-    // Inner gold trim
-    g.fillStyle(PALETTE.GOLD_DARK, 1);
-    g.strokeRect(2, 2, w - 4, h - 4);
-
-    // Parchment interior
-    g.fillStyle(fillColor, 1);
-    g.fillRect(3, 3, w - 6, h - 6);
-
-    // Subtle dithered texture on parchment
-    this.drawDitheredRect(g, 4, 4, w - 8, h - 8, fillColor, PALETTE.PARCHMENT_DARK, 'sparse');
-
-    // Ornate Medieval Corner Brackets
-    const cornerSize = 5;
-    g.fillStyle(PALETTE.GOLD_BRIGHT, 1);
-    // Top-left
-    g.fillRect(2, 2, cornerSize, 2);
-    g.fillRect(2, 2, 2, cornerSize);
-    // Top-right
-    g.fillRect(w - 2 - cornerSize, 2, cornerSize, 2);
-    g.fillRect(w - 4, 2, 2, cornerSize);
-    // Bottom-left
-    g.fillRect(2, h - 4, cornerSize, 2);
-    g.fillRect(2, h - 2 - cornerSize, 2, cornerSize);
-    // Bottom-right
-    g.fillRect(w - 2 - cornerSize, h - 4, cornerSize, 2);
-    g.fillRect(w - 4, h - 2 - cornerSize, 2, cornerSize);
-
-    // Corner Studs / Rivets
-    g.fillStyle(PALETTE.BLACK, 1);
-    g.fillRect(3, 3, 1, 1);
-    g.fillRect(w - 4, 3, 1, 1);
-    g.fillRect(3, h - 4, 1, 1);
-    g.fillRect(w - 4, h - 4, 1, 1);
-
-    g.generateTexture(key, w + 2, h + 2);
-    g.destroy();
-  }
-
-  /**
-   * Generates interactive button states.
-   */
-  public static createButtonTextures(scene: Phaser.Scene): void {
-    const states = [
-      { key: 'btn_wood_normal', bg: PALETTE.WOOD_MID, border: PALETTE.GOLD_DARK, textHighlight: PALETTE.PARCHMENT_LIGHT },
-      { key: 'btn_wood_hover', bg: PALETTE.WOOD_DARK, border: PALETTE.GOLD_BRIGHT, textHighlight: PALETTE.GOLD_BRIGHT },
-      { key: 'btn_wood_active', bg: PALETTE.BLACK, border: PALETTE.BLOOD_RED, textHighlight: PALETTE.GOLD_DARK },
-    ];
-
-    const w = 110;
-    const h = 20;
-
-    for (const s of states) {
-      if (scene.textures.exists(s.key)) continue;
-      const g = scene.make.graphics({ x: 0, y: 0 });
-
-      // Drop shadow
-      g.fillStyle(PALETTE.BLACK, 0.7);
-      g.fillRect(2, 2, w - 2, h - 2);
-
-      // Border
-      g.fillStyle(s.border, 1);
-      g.fillRect(0, 0, w - 2, h - 2);
-
-      // Face
-      g.fillStyle(s.bg, 1);
-      g.fillRect(2, 2, w - 6, h - 6);
-
-      // Highlight line on top and left edge
-      g.fillStyle(s.textHighlight, 0.6);
-      g.fillRect(2, 2, w - 6, 1);
-      g.fillRect(2, 2, 1, h - 6);
-
-      g.generateTexture(s.key, w, h);
-      g.destroy();
-    }
-  }
-
-  /**
-   * Generates Coat of Arms Shields for Saxon and Norman Lords (32x40).
+   * Generates Coat of Arms Shields for Saxon and Norman Lords (44x56).
    */
   public static createHeraldicShield(
     scene: Phaser.Scene,
@@ -358,31 +256,27 @@ export class PixelArtGenerator {
     if (scene.textures.exists(key)) return;
 
     const g = scene.make.graphics({ x: 0, y: 0 });
-    const w = 32;
-    const h = 40;
+    const w = 44;
+    const h = 56;
 
-    // Shield Silhouette Points:
-    // Top flat: (3, 2) to (28, 2)
-    // Sides straight down to y = 24
-    // Pointed bottom curving to (16, 38)
     const drawShieldPath = () => {
       g.beginPath();
-      g.moveTo(4, 2);
-      g.lineTo(27, 2);
-      g.lineTo(27, 22);
-      g.lineTo(16, 37);
-      g.lineTo(4, 22);
+      g.moveTo(5, 3);
+      g.lineTo(38, 3);
+      g.lineTo(38, 32);
+      g.lineTo(22, 52);
+      g.lineTo(5, 32);
       g.closePath();
     };
 
     // 1. Drop Shadow
     g.fillStyle(PALETTE.BLACK, 0.7);
     g.beginPath();
-    g.moveTo(6, 4);
-    g.lineTo(29, 4);
-    g.lineTo(29, 23);
-    g.lineTo(17, 39);
-    g.lineTo(6, 23);
+    g.moveTo(7, 5);
+    g.lineTo(40, 5);
+    g.lineTo(40, 33);
+    g.lineTo(23, 54);
+    g.lineTo(7, 33);
     g.closePath();
     g.fillPath();
 
@@ -391,276 +285,259 @@ export class PixelArtGenerator {
     drawShieldPath();
     g.fillPath();
 
-    // 3. Shield Primary Field (inset by 2px)
+    // 3. Shield Primary Field
     g.fillStyle(primaryColor, 1);
     g.beginPath();
-    g.moveTo(6, 4);
-    g.lineTo(25, 4);
-    g.lineTo(25, 21);
-    g.lineTo(16, 34);
-    g.lineTo(6, 21);
+    g.moveTo(8, 6);
+    g.lineTo(35, 6);
+    g.lineTo(35, 30);
+    g.lineTo(22, 48);
+    g.lineTo(8, 30);
     g.closePath();
     g.fillPath();
 
-    // 4. Heraldic Charges & Divisions based on Symbol
+    // 4. Heraldic Charges based on Symbol
     if (symbol === 'cross') {
-      // St. George style cross
       g.fillStyle(secondaryColor, 1);
-      g.fillRect(14, 4, 4, 30); // Vertical bar
-      g.fillRect(6, 12, 19, 4); // Horizontal bar
-      // Accent outline
+      g.fillRect(19, 6, 6, 42);
+      g.fillRect(8, 17, 27, 6);
       g.fillStyle(accentColor, 1);
-      g.fillRect(15, 5, 2, 28);
-      g.fillRect(7, 13, 17, 2);
+      g.fillRect(21, 7, 2, 40);
+      g.fillRect(9, 19, 25, 2);
     } else if (symbol === 'boar') {
-      // Quarterly division
       g.fillStyle(secondaryColor, 1);
-      g.fillRect(15, 4, 10, 12);
-      g.fillRect(6, 16, 9, 10);
+      g.fillRect(22, 6, 13, 17);
+      g.fillRect(8, 23, 14, 14);
       // Boar head charge
       g.fillStyle(accentColor, 1);
-      g.fillRect(11, 10, 10, 6);
-      g.fillRect(8, 12, 4, 3); // Snout
+      g.fillRect(15, 14, 14, 9);
+      g.fillRect(11, 17, 6, 5); // Snout
       g.fillStyle(PALETTE.BLACK, 1);
-      g.fillRect(17, 11, 2, 2); // Eye
+      g.fillRect(24, 16, 3, 3); // Eye
       g.fillStyle(PALETTE.PARCHMENT_LIGHT, 1);
-      g.fillRect(8, 14, 2, 3); // Tusk
+      g.fillRect(11, 20, 3, 4); // Tusk
     } else if (symbol === 'sword') {
-      // Diagonal bend
       g.fillStyle(secondaryColor, 1);
-      for (let i = 0; i < 18; i++) {
-        g.fillRect(7 + i, 5 + i, 3, 3);
+      for (let i = 0; i < 25; i++) {
+        g.fillRect(10 + i, 7 + i, 4, 4);
       }
       // Sword in center
       g.fillStyle(accentColor, 1);
-      g.fillRect(15, 7, 2, 20); // Blade
-      g.fillRect(12, 23, 8, 2); // Crossguard
-      g.fillRect(15, 25, 2, 4); // Hilt
+      g.fillRect(21, 10, 3, 28); // Blade
+      g.fillRect(17, 32, 11, 3); // Crossguard
+      g.fillRect(21, 35, 3, 6);  // Hilt
       g.fillStyle(PALETTE.GOLD_BRIGHT, 1);
-      g.fillRect(14, 28, 4, 2); // Pommel
+      g.fillRect(20, 40, 5, 3);  // Pommel
     } else if (symbol === 'wolf') {
-      // Wolf Head Motif
       g.fillStyle(secondaryColor, 1);
-      g.fillTriangle(16, 8, 9, 24, 23, 24);
-      // Wolf silhouette
+      g.fillTriangle(22, 12, 12, 34, 32, 34);
       g.fillStyle(accentColor, 1);
-      g.fillTriangle(16, 10, 11, 20, 21, 20);
-      // Ears
-      g.fillRect(11, 7, 3, 4);
-      g.fillRect(18, 7, 3, 4);
-      // Fierce glowing eyes
+      g.fillTriangle(22, 15, 15, 28, 29, 28);
+      g.fillRect(15, 10, 4, 6);
+      g.fillRect(25, 10, 4, 6);
       g.fillStyle(PALETTE.GOLD_BRIGHT, 1);
-      g.fillRect(13, 13, 2, 2);
-      g.fillRect(17, 13, 2, 2);
-      // Muzzle
-      g.fillRect(14, 18, 4, 4);
+      g.fillRect(18, 19, 3, 3);
+      g.fillRect(23, 19, 3, 3);
+      g.fillRect(20, 26, 5, 6);
     } else if (symbol === 'falcon') {
-      // Falcon / Bird of prey
       g.fillStyle(secondaryColor, 1);
-      g.fillTriangle(16, 6, 8, 16, 24, 16); // Wings
-      g.fillRect(14, 16, 4, 10); // Body
+      g.fillTriangle(22, 9, 11, 23, 33, 23);
+      g.fillRect(19, 23, 6, 14);
       g.fillStyle(accentColor, 1);
-      g.fillRect(15, 9, 2, 2); // Eye
-      g.fillRect(16, 11, 3, 2); // Beak
+      g.fillRect(21, 13, 3, 3);
+      g.fillRect(22, 16, 4, 3);
     } else if (symbol === 'axe') {
-      // Battle Axe
       g.fillStyle(secondaryColor, 1);
-      g.fillRect(15, 7, 2, 22); // Shaft
+      g.fillRect(21, 10, 3, 30);
       g.fillStyle(accentColor, 1);
-      // Double blades
-      g.fillRect(10, 10, 5, 8);
-      g.fillRect(17, 10, 5, 8);
+      g.fillRect(14, 14, 7, 12);
+      g.fillRect(24, 14, 7, 12);
       g.fillStyle(PALETTE.GOLD_DARK, 1);
-      g.fillRect(14, 9, 4, 10);
+      g.fillRect(19, 13, 6, 14);
     } else if (symbol === 'lion') {
-      // Rampant Lion
       g.fillStyle(secondaryColor, 1);
-      g.fillRect(12, 10, 8, 14); // Torso
-      g.fillRect(14, 7, 6, 5);   // Head
-      g.fillRect(9, 9, 4, 3);    // Forepaw up
-      g.fillRect(18, 12, 4, 3);   // Forepaw down
-      g.fillRect(10, 22, 4, 5);  // Hind leg
-      g.fillRect(17, 21, 4, 6);  // Rear leg
-      // Tail
-      g.fillRect(8, 14, 2, 7);
-      g.fillRect(7, 13, 2, 2);
+      g.fillRect(17, 14, 11, 20);
+      g.fillRect(19, 10, 8, 7);
+      g.fillRect(12, 13, 6, 4);
+      g.fillRect(25, 17, 6, 4);
+      g.fillRect(14, 31, 6, 7);
+      g.fillRect(24, 30, 6, 8);
+      g.fillRect(11, 20, 3, 10);
+      g.fillRect(10, 18, 3, 3);
       g.fillStyle(accentColor, 1);
-      g.fillRect(15, 8, 1, 1); // Eye
+      g.fillRect(21, 11, 2, 2);
     }
 
-    // 5. Specular highlight on shield rim
+    // Specular highlight on shield rim
     g.fillStyle(PALETTE.GOLD_BRIGHT, 0.7);
-    g.fillRect(5, 3, 22, 1);
-    g.fillRect(4, 3, 1, 18);
+    g.fillRect(7, 4, 31, 2);
+    g.fillRect(5, 4, 2, 25);
 
     g.generateTexture(key, w, h);
     g.destroy();
   }
 
   /**
-   * Generates 48x48 pixel art portraits for the Saxon Lords.
+   * Generates 64x64 detailed pixel art portraits for the Saxon Lords.
    */
   public static createLordPortraits(scene: Phaser.Scene): void {
-    const size = 48;
+    const size = 64;
 
-    // 1. Ivanhoe: Blond hair, silver helm/coif, noble blue eyes, red/gold tunic
+    // 1. Ivanhoe
     if (!scene.textures.exists('portrait_ivanhoe')) {
       const g = scene.make.graphics({ x: 0, y: 0 });
-      // Background stone arch
       this.drawDitheredRect(g, 0, 0, size, size, PALETTE.STONE_DARK, PALETTE.SHADOW, 'checker');
       g.fillStyle(PALETTE.GOLD_DARK, 1);
       g.strokeRect(1, 1, size - 2, size - 2);
 
       // Torso / Red Tunic
       g.fillStyle(PALETTE.BLOOD_RED, 1);
-      g.fillRect(8, 32, 32, 16);
+      g.fillRect(11, 43, 42, 21);
       g.fillStyle(PALETTE.GOLD_BRIGHT, 1);
-      g.fillRect(22, 32, 4, 16); // Gold trim on tunic
-      // Shoulders / Chainmail mantle
+      g.fillRect(29, 43, 6, 21);
+      // Chainmail mantle
       g.fillStyle(PALETTE.STONE_LIGHT, 1);
-      g.fillRect(10, 28, 28, 6);
+      g.fillRect(13, 37, 38, 8);
 
-      // Face / Flesh
+      // Face
       g.fillStyle(PALETTE.PARCHMENT_LIGHT, 1);
-      g.fillRect(16, 14, 16, 16);
-      // Jaw / Chin
-      g.fillRect(18, 26, 12, 4);
+      g.fillRect(21, 19, 22, 21);
+      g.fillRect(24, 35, 16, 5);
 
-      // Chainmail Coif around head
+      // Chainmail Coif
       g.fillStyle(PALETTE.STONE_MID, 1);
-      g.fillRect(14, 8, 20, 7);
-      g.fillRect(13, 13, 3, 15);
-      g.fillRect(32, 13, 3, 15);
-      // Chainmail texture dots
+      g.fillRect(19, 11, 26, 9);
+      g.fillRect(17, 17, 4, 20);
+      g.fillRect(43, 17, 4, 20);
+      // Highlights
       g.fillStyle(PALETTE.STONE_LIGHT, 1);
-      g.fillRect(16, 9, 2, 2);
-      g.fillRect(22, 9, 2, 2);
-      g.fillRect(28, 9, 2, 2);
+      g.fillRect(22, 12, 3, 3);
+      g.fillRect(30, 12, 3, 3);
+      g.fillRect(38, 12, 3, 3);
 
-      // Blond / Light Hair fringes
+      // Blond Hair fringes
       g.fillStyle(PALETTE.GOLD_BRIGHT, 1);
-      g.fillRect(18, 14, 12, 2);
+      g.fillRect(24, 19, 16, 3);
 
       // Eyes
       g.fillStyle(PALETTE.ROYAL_BLUE, 1);
-      g.fillRect(18, 18, 3, 2);
-      g.fillRect(27, 18, 3, 2);
-      // Eyebrows
+      g.fillRect(24, 24, 4, 3);
+      g.fillRect(36, 24, 4, 3);
+      // Brows
       g.fillStyle(PALETTE.WOOD_DARK, 1);
-      g.fillRect(17, 16, 4, 1);
-      g.fillRect(27, 16, 4, 1);
+      g.fillRect(23, 21, 5, 2);
+      g.fillRect(36, 21, 5, 2);
 
       // Nose
       g.fillStyle(PALETTE.PARCHMENT_DARK, 1);
-      g.fillRect(23, 19, 2, 4);
+      g.fillRect(31, 25, 3, 6);
 
-      // Noble Mustache
+      // Mustache
       g.fillStyle(PALETTE.GOLD_DARK, 1);
-      g.fillRect(20, 24, 8, 2);
-      g.fillRect(19, 25, 2, 2);
-      g.fillRect(27, 25, 2, 2);
+      g.fillRect(26, 32, 12, 3);
+      g.fillRect(25, 34, 3, 3);
+      g.fillRect(36, 34, 3, 3);
 
       g.generateTexture('portrait_ivanhoe', size, size);
       g.destroy();
     }
 
-    // 2. Cedric: Older, gray hair and thick beard, leather & brass armor, determined
+    // 2. Cedric
     if (!scene.textures.exists('portrait_cedric')) {
       const g = scene.make.graphics({ x: 0, y: 0 });
       this.drawDitheredRect(g, 0, 0, size, size, PALETTE.WOOD_DARK, PALETTE.BLACK, 'checker');
       g.fillStyle(PALETTE.GOLD_DARK, 1);
       g.strokeRect(1, 1, size - 2, size - 2);
 
-      // Torso / Dark Forest Tunic with leather harness
+      // Torso / Leather & Green tunic
       g.fillStyle(PALETTE.FOLIAGE_DARK, 1);
-      g.fillRect(8, 32, 32, 16);
+      g.fillRect(11, 43, 42, 21);
       g.fillStyle(PALETTE.WOOD_MID, 1);
-      g.fillRect(14, 30, 20, 8); // Leather mantle
+      g.fillRect(19, 40, 26, 11);
 
-      // Head / Face
+      // Head
       g.fillStyle(PALETTE.PARCHMENT_LIGHT, 1);
-      g.fillRect(16, 12, 16, 16);
+      g.fillRect(21, 16, 22, 21);
 
       // Long Gray Hair
       g.fillStyle(PALETTE.STONE_LIGHT, 1);
-      g.fillRect(13, 8, 22, 6);
-      g.fillRect(12, 12, 4, 18);
-      g.fillRect(32, 12, 4, 18);
+      g.fillRect(17, 11, 30, 8);
+      g.fillRect(16, 16, 5, 24);
+      g.fillRect(43, 16, 5, 24);
 
-      // Bushy Gray Eyebrows
+      // Eyebrows
       g.fillStyle(PALETTE.STONE_DARK, 1);
-      g.fillRect(17, 15, 5, 2);
-      g.fillRect(26, 15, 5, 2);
+      g.fillRect(23, 20, 7, 3);
+      g.fillRect(34, 20, 7, 3);
 
-      // Piercing eyes
+      // Eyes
       g.fillStyle(PALETTE.BLACK, 1);
-      g.fillRect(18, 18, 3, 2);
-      g.fillRect(27, 18, 3, 2);
+      g.fillRect(24, 24, 4, 3);
+      g.fillRect(36, 24, 4, 3);
 
-      // Weathered Nose
+      // Nose
       g.fillStyle(PALETTE.PARCHMENT_DARK, 1);
-      g.fillRect(23, 18, 3, 5);
+      g.fillRect(31, 24, 4, 7);
 
       // Great Gray Beard
       g.fillStyle(PALETTE.STONE_LIGHT, 1);
-      g.fillRect(17, 24, 14, 10);
-      g.fillRect(19, 32, 10, 6);
-      // Beard dither / shading
+      g.fillRect(23, 32, 18, 13);
+      g.fillRect(25, 43, 14, 8);
       g.fillStyle(PALETTE.STONE_MID, 1);
-      g.fillRect(20, 26, 8, 2);
-      g.fillRect(21, 30, 6, 2);
+      g.fillRect(27, 35, 10, 3);
+      g.fillRect(28, 41, 8, 3);
 
       g.generateTexture('portrait_cedric', size, size);
       g.destroy();
     }
 
-    // 3. Geoffrey: Steel blade master, dark locks, blue tabard, lean keen gaze
+    // 3. Geoffrey
     if (!scene.textures.exists('portrait_geoffrey')) {
       const g = scene.make.graphics({ x: 0, y: 0 });
       this.drawDitheredRect(g, 0, 0, size, size, PALETTE.SHADOW, PALETTE.BLACK, 'checker');
       g.fillStyle(PALETTE.GOLD_DARK, 1);
       g.strokeRect(1, 1, size - 2, size - 2);
 
-      // Torso / Royal Blue Tabard with steel gorget
+      // Torso / Blue Tabard & Steel gorget
       g.fillStyle(PALETTE.ROYAL_BLUE, 1);
-      g.fillRect(8, 32, 32, 16);
+      g.fillRect(11, 43, 42, 21);
       g.fillStyle(PALETTE.STONE_LIGHT, 1);
-      g.fillRect(18, 30, 12, 4); // Steel collar
+      g.fillRect(24, 40, 16, 5);
 
       // Face
       g.fillStyle(PALETTE.PARCHMENT_LIGHT, 1);
-      g.fillRect(17, 13, 14, 15);
-      g.fillRect(19, 26, 10, 4);
+      g.fillRect(23, 17, 18, 20);
+      g.fillRect(25, 35, 14, 5);
 
       // Dark Swept Hair
       g.fillStyle(PALETTE.BLACK, 1);
-      g.fillRect(15, 7, 18, 7);
-      g.fillRect(14, 11, 4, 14);
-      g.fillRect(30, 11, 4, 14);
-      g.fillRect(17, 12, 4, 3); // Forelock
+      g.fillRect(20, 9, 24, 9);
+      g.fillRect(19, 15, 5, 19);
+      g.fillRect(40, 15, 5, 19);
+      g.fillRect(23, 16, 5, 4);
 
-      // Sharp dark eyes
+      // Eyes
       g.fillStyle(PALETTE.BLACK, 1);
-      g.fillRect(18, 17, 3, 2);
-      g.fillRect(27, 17, 3, 2);
+      g.fillRect(24, 23, 4, 3);
+      g.fillRect(36, 23, 4, 3);
       g.fillStyle(PALETTE.WOOD_DARK, 1);
-      g.fillRect(17, 15, 5, 1);
-      g.fillRect(26, 15, 5, 1);
+      g.fillRect(23, 20, 7, 2);
+      g.fillRect(34, 20, 7, 2);
 
       // Nose
       g.fillStyle(PALETTE.PARCHMENT_DARK, 1);
-      g.fillRect(23, 18, 2, 5);
+      g.fillRect(31, 24, 3, 7);
 
-      // Chin goatee / trim beard
+      // Beard / Goatee
       g.fillStyle(PALETTE.BLACK, 1);
-      g.fillRect(20, 24, 8, 2); // Thin mustache
-      g.fillRect(22, 27, 4, 4); // Goatee
+      g.fillRect(27, 32, 10, 3);
+      g.fillRect(30, 36, 5, 5);
 
       g.generateTexture('portrait_geoffrey', size, size);
       g.destroy();
     }
 
-    // 4. Wolfric: Wild warlord, red hair and wild beard, wolf pelt on shoulder
+    // 4. Wolfric
     if (!scene.textures.exists('portrait_wolfric')) {
       const g = scene.make.graphics({ x: 0, y: 0 });
       this.drawDitheredRect(g, 0, 0, size, size, PALETTE.STONE_DARK, PALETTE.BLACK, 'checker');
@@ -669,51 +546,48 @@ export class PixelArtGenerator {
 
       // Torso / Wolf fur pelt
       g.fillStyle(PALETTE.WOOD_DARK, 1);
-      g.fillRect(8, 32, 32, 16);
-      // Fur texture across shoulder
+      g.fillRect(11, 43, 42, 21);
       g.fillStyle(PALETTE.PARCHMENT_DARK, 1);
-      g.fillRect(10, 28, 14, 6);
+      g.fillRect(13, 37, 19, 8);
       g.fillStyle(PALETTE.BLACK, 1);
-      g.fillRect(11, 30, 3, 3); // Wolf snout clasp
+      g.fillRect(15, 40, 4, 4);
 
       // Face
       g.fillStyle(PALETTE.PARCHMENT_LIGHT, 1);
-      g.fillRect(16, 12, 16, 16);
+      g.fillRect(21, 16, 22, 21);
 
-      // Wild Auburn / Red Hair
+      // Wild Auburn Hair
       g.fillStyle(PALETTE.WOOD_MID, 1);
-      g.fillRect(13, 6, 22, 7);
-      g.fillRect(11, 10, 6, 18);
-      g.fillRect(31, 10, 6, 18);
-      // Hair volume
+      g.fillRect(17, 8, 30, 9);
+      g.fillRect(15, 13, 8, 24);
+      g.fillRect(41, 13, 8, 24);
       g.fillStyle(PALETTE.GOLD_DARK, 1);
-      g.fillRect(15, 7, 8, 3);
-      g.fillRect(25, 7, 8, 3);
+      g.fillRect(20, 9, 11, 4);
+      g.fillRect(33, 9, 11, 4);
 
-      // Fierce Brow
+      // Brow
       g.fillStyle(PALETTE.WOOD_DARK, 1);
-      g.fillRect(16, 15, 6, 2);
-      g.fillRect(26, 15, 6, 2);
+      g.fillRect(21, 20, 8, 3);
+      g.fillRect(35, 20, 8, 3);
 
-      // Green / Wild Eyes
+      // Eyes
       g.fillStyle(PALETTE.FOLIAGE_MID, 1);
-      g.fillRect(18, 17, 3, 2);
-      g.fillRect(27, 17, 3, 2);
+      g.fillRect(24, 23, 4, 3);
+      g.fillRect(36, 23, 4, 3);
 
-      // Rugged Nose with scar
+      // Nose & Scar
       g.fillStyle(PALETTE.PARCHMENT_DARK, 1);
-      g.fillRect(23, 17, 3, 5);
+      g.fillRect(31, 23, 4, 7);
       g.fillStyle(PALETTE.BLOOD_RED, 1);
-      g.fillRect(20, 16, 2, 4); // Battle scar
+      g.fillRect(27, 21, 3, 5); // Battle scar
 
       // Full Wild Red Beard
       g.fillStyle(PALETTE.WOOD_MID, 1);
-      g.fillRect(16, 23, 16, 10);
-      g.fillRect(18, 32, 12, 6);
-      // Beard highlights
+      g.fillRect(21, 31, 22, 13);
+      g.fillRect(24, 43, 16, 8);
       g.fillStyle(PALETTE.GOLD_DARK, 1);
-      g.fillRect(19, 25, 10, 3);
-      g.fillRect(21, 31, 6, 4);
+      g.fillRect(25, 33, 14, 4);
+      g.fillRect(28, 41, 8, 5);
 
       g.generateTexture('portrait_wolfric', size, size);
       g.destroy();
@@ -724,28 +598,19 @@ export class PixelArtGenerator {
    * Initializes all procedural art textures at boot time.
    */
   public static generateAll(scene: Phaser.Scene): void {
-    // 1. Backdrops
+    // 1. Backdrops (640x400)
     this.createTitleBackdrop(scene);
 
-    // 2. UI Panels
-    this.createPanelTexture(scene, 'panel_parchment', 160, 100);
-    this.createPanelTexture(scene, 'panel_stat_box', 280, 52);
-    this.createPanelTexture(scene, 'panel_bio', 290, 75);
-    this.createPanelTexture(scene, 'panel_verify', 296, 160);
-
-    // 3. UI Buttons
-    this.createButtonTextures(scene);
-
-    // 4. Saxon Lord Portraits
+    // 2. Lord Portraits (64x64)
     this.createLordPortraits(scene);
 
-    // 5. Saxon Lord Shields
+    // 3. Saxon Lord Shields (44x56)
     this.createHeraldicShield(scene, 'shield_ivanhoe', PALETTE.BLOOD_RED, PALETTE.GOLD_BRIGHT, PALETTE.PARCHMENT_LIGHT, 'cross');
     this.createHeraldicShield(scene, 'shield_cedric', PALETTE.FOLIAGE_MID, PALETTE.GOLD_BRIGHT, PALETTE.WOOD_DARK, 'boar');
     this.createHeraldicShield(scene, 'shield_geoffrey', PALETTE.ROYAL_BLUE, PALETTE.STONE_LIGHT, PALETTE.GOLD_DARK, 'sword');
     this.createHeraldicShield(scene, 'shield_wolfric', PALETTE.WOOD_MID, PALETTE.PARCHMENT_LIGHT, PALETTE.STONE_DARK, 'wolf');
 
-    // 6. Norman Lord Shields
+    // 4. Norman Lord Shields
     this.createHeraldicShield(scene, 'shield_malvoisin', PALETTE.STONE_DARK, PALETTE.BLOOD_RED, PALETTE.GOLD_DARK, 'falcon');
     this.createHeraldicShield(scene, 'shield_frontdeboeuf', PALETTE.BLACK, PALETTE.GOLD_DARK, PALETTE.BLOOD_RED, 'axe');
     this.createHeraldicShield(scene, 'shield_boisguilbert', PALETTE.STONE_LIGHT, PALETTE.BLOOD_RED, PALETTE.BLACK, 'lion');
