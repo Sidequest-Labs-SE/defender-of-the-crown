@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Defender of the Crown - Amiga 1986 Modernized Remake</title>
+  <title>Defender of the Crown — HD Edition</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * {
       box-sizing: border-box;
@@ -20,12 +20,11 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background-color: #000000;
+      background-color: #0B0D14;
       display: flex;
-      flex-direction: column;
       justify-content: center;
       align-items: center;
-      font-family: 'Courier New', monospace;
+      font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
       color: #F4E4C1;
       user-select: none;
       -webkit-user-select: none;
@@ -35,63 +34,26 @@
       width: 100vw;
       height: 100vh;
       display: flex;
-      flex-direction: column;
       justify-content: center;
       align-items: center;
-      background: radial-gradient(circle at center, #1A1A2E 0%, #000000 100%);
+      background: radial-gradient(circle at center, #181D2C 0%, #090A10 100%);
       position: relative;
     }
     #phaser-canvas {
       width: 100vw;
-      height: calc(100vh - 28px);
-      max-width: 100vw;
-      max-height: calc(100vh - 28px);
+      height: 100vh;
       display: flex;
       justify-content: center;
       align-items: center;
     }
     canvas {
-      image-rendering: -moz-crisp-edges;
-      image-rendering: -webkit-crisp-edges;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
-      box-shadow: 0 0 35px rgba(0, 0, 0, 0.95), 0 0 14px rgba(78, 42, 20, 0.6);
-      border: 2px solid #4E2A14;
-      border-radius: 4px;
-    }
-    #bottom-bar {
-      height: 24px;
-      line-height: 24px;
-      font-size: 11px;
-      letter-spacing: 1px;
-      color: #A8A8B2;
-      text-transform: uppercase;
-      text-align: center;
-      z-index: 10;
-    }
-    #bottom-bar span.key {
-      color: #F2D06B;
-      font-weight: bold;
-    }
-    @media (max-width: 600px) {
-      #bottom-bar {
-        font-size: 9px;
-        height: 20px;
-        line-height: 20px;
-      }
-      #phaser-canvas {
-        height: calc(100vh - 22px);
-        max-height: calc(100vh - 22px);
-      }
+      box-shadow: 0 12px 48px rgba(0, 0, 0, 0.9);
     }
   </style>
 </head>
 <body>
   <div id="game-container">
     <div id="phaser-canvas"></div>
-    <div id="bottom-bar">
-      [AMIGA HI-RES 640x400] &bull; Press <span class="key">C</span> or tap <span class="key">CRT</span> to toggle filter
-    </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>

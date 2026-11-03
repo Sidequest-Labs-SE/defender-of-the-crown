@@ -1,10 +1,8 @@
 import Phaser from 'phaser';
-import { CrtOverlay } from '../utils/CrtOverlay';
 import { PALETTE, PALETTE_HEX } from '../data/palette';
 import { GameState } from '../core/GameState';
 
 export class TitleScene extends Phaser.Scene {
-  private crtOverlay!: CrtOverlay;
   private promptText!: Phaser.GameObjects.Text;
 
   constructor() {
@@ -14,107 +12,105 @@ export class TitleScene extends Phaser.Scene {
   create(): void {
     GameState.getInstance().setPhase('TITLE');
 
-    // 1. Full 640x400 Castle Siege Backdrop
+    // 1. Full 1280x720 Widescreen Castle Siege Backdrop
     this.add.image(0, 0, 'title_backdrop').setOrigin(0, 0);
 
-    // 2. Title Header Banner Box (640x400 layout)
+    // 2. Ornate Title Header Banner Box (1280x720 layout)
     const bannerBox = this.add.graphics();
-    // Drop shadow
-    bannerBox.fillStyle(PALETTE.BLACK, 0.75);
-    bannerBox.fillRect(34, 24, 576, 76);
-    // Dark Wood Frame
-    bannerBox.fillStyle(PALETTE.WOOD_DARK, 0.95);
-    bannerBox.fillRect(30, 20, 580, 76);
-    // Gold Inner Border
-    bannerBox.lineStyle(2, PALETTE.GOLD_DARK, 1);
-    bannerBox.strokeRect(34, 24, 572, 68);
-    // Inner Filigree Corners
+    bannerBox.fillStyle(PALETTE.BLACK, 0.72);
+    bannerBox.fillRoundedRect(166, 38, 956, 136, 6);
+    bannerBox.fillStyle(PALETTE.WOOD_DARK, 0.94);
+    bannerBox.fillRoundedRect(160, 32, 960, 136, 6);
+    bannerBox.lineStyle(3, PALETTE.GOLD_DARK, 1);
+    bannerBox.strokeRoundedRect(168, 40, 944, 120, 4);
+
+    // Corner Gold Filigree
     bannerBox.fillStyle(PALETTE.GOLD_BRIGHT, 1);
-    bannerBox.fillRect(36, 26, 6, 6);
-    bannerBox.fillRect(598, 26, 6, 6);
-    bannerBox.fillRect(36, 84, 6, 6);
-    bannerBox.fillRect(598, 84, 6, 6);
+    bannerBox.fillRect(174, 46, 10, 10);
+    bannerBox.fillRect(1096, 46, 10, 10);
+    bannerBox.fillRect(174, 144, 10, 10);
+    bannerBox.fillRect(1096, 144, 10, 10);
 
-    // 3. Iconic "DEFENDER OF THE CROWN" Title Text (Crisp 28px)
-    // Black Shadow
-    this.add.text(320, 47, 'DEFENDER OF THE CROWN', {
-      fontFamily: 'Georgia, serif',
-      fontSize: '28px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.BLACK,
-      letterSpacing: 2,
-    }).setOrigin(0.5);
+    // 3. "DEFENDER OF THE CROWN" HD Title Typography
+    this.add
+      .text(643, 84, 'DEFENDER OF THE CROWN', {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '48px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.BLACK,
+        letterSpacing: 3,
+        resolution: 2,
+      })
+      .setOrigin(0.5);
 
-    // Deep Blood Red Offset
-    this.add.text(319, 45, 'DEFENDER OF THE CROWN', {
-      fontFamily: 'Georgia, serif',
-      fontSize: '28px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.BLOOD_RED,
-      letterSpacing: 2,
-    }).setOrigin(0.5);
+    this.add
+      .text(640, 80, 'DEFENDER OF THE CROWN', {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '48px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.GOLD_BRIGHT,
+        letterSpacing: 3,
+        resolution: 2,
+      })
+      .setOrigin(0.5);
 
-    // Golden Main Text
-    this.add.text(320, 44, 'DEFENDER OF THE CROWN', {
-      fontFamily: 'Georgia, serif',
-      fontSize: '28px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.GOLD_BRIGHT,
-      letterSpacing: 2,
-    }).setOrigin(0.5);
-
-    // Subtitle
-    this.add.text(320, 74, 'AN AMIGA 1986 CINEMAWARE TRIBUTE', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '13px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.PARCHMENT_LIGHT,
-      letterSpacing: 3,
-    }).setOrigin(0.5);
+    this.add
+      .text(640, 132, 'A CINEMAWARE 1986 TRIBUTE • WIDESCREEN HD EDITION', {
+        fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif',
+        fontSize: '15px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.PARCHMENT_LIGHT,
+        letterSpacing: 3,
+        resolution: 2,
+      })
+      .setOrigin(0.5);
 
     // 4. Prologue Parchment Box (center-bottom)
     const prologueBox = this.add.graphics();
-    prologueBox.fillStyle(PALETTE.BLACK, 0.75);
-    prologueBox.fillRect(44, 244, 552, 96);
-    prologueBox.fillStyle(PALETTE.WOOD_DARK, 0.92);
-    prologueBox.fillRect(40, 240, 560, 96);
-    prologueBox.lineStyle(2, PALETTE.GOLD_DARK, 0.85);
-    prologueBox.strokeRect(44, 244, 552, 88);
+    prologueBox.fillStyle(PALETTE.BLACK, 0.72);
+    prologueBox.fillRoundedRect(226, 456, 836, 152, 6);
+    prologueBox.fillStyle(PALETTE.WOOD_DARK, 0.93);
+    prologueBox.fillRoundedRect(220, 450, 840, 152, 6);
+    prologueBox.lineStyle(2, PALETTE.GOLD_DARK, 0.9);
+    prologueBox.strokeRoundedRect(228, 458, 824, 136, 4);
 
     const prologue =
-      'ENGLAND, 1149 A.D. The King is slain, the Crown\n' +
-      'stolen, and civil war threatens the realm!\n' +
+      'ENGLAND, 1149 A.D. — The King is slain, the Crown stolen,\n' +
+      'and civil war threatens to tear the realm asunder!\n' +
       'Lead the noble Saxons against the Norman usurpers\n' +
       'to reclaim the throne and unite the kingdom!';
 
-    this.add.text(320, 288, prologue, {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '13px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.PARCHMENT_LIGHT,
-      align: 'center',
-      lineSpacing: 5,
-    }).setOrigin(0.5);
+    this.add
+      .text(640, 526, prologue, {
+        fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif',
+        fontSize: '18px',
+        color: PALETTE_HEX.PARCHMENT_LIGHT,
+        align: 'center',
+        lineSpacing: 8,
+        resolution: 2,
+      })
+      .setOrigin(0.5);
 
-    // 5. Blinking "CLICK TO START" Prompt
-    this.promptText = this.add.text(320, 368, '⚔  CLICK OR TAP TO SWEAR OATH & BEGIN  ⚔', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '13px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.GOLD_BRIGHT,
-      letterSpacing: 1,
-    }).setOrigin(0.5);
+    // 5. Pulsing Start Prompt
+    this.promptText = this.add
+      .text(640, 656, '⚔   CLICK OR PRESS ENTER TO SWEAR OATH & BEGIN   ⚔', {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '20px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.GOLD_BRIGHT,
+        letterSpacing: 2,
+        resolution: 2,
+      })
+      .setOrigin(0.5);
 
-    // Pulsing tween
     this.tweens.add({
       targets: this.promptText,
-      alpha: { from: 1, to: 0.25 },
-      duration: 550,
+      alpha: { from: 1, to: 0.3 },
+      duration: 650,
       yoyo: true,
       repeat: -1,
     });
 
-    // 6. Interaction to start game
     const proceed = () => {
       this.cameras.main.fadeOut(300, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
@@ -127,11 +123,5 @@ export class TitleScene extends Phaser.Scene {
       this.input.keyboard.once('keydown-SPACE', proceed);
       this.input.keyboard.once('keydown-ENTER', proceed);
     }
-
-    // 7. Toggleable CRT Scanlines
-    this.crtOverlay = new CrtOverlay(this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.crtOverlay.destroy();
-    });
   }
 }

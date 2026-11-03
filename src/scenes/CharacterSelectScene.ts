@@ -3,7 +3,6 @@ import { GameState } from '../core/GameState';
 import { SAXON_LORDS } from '../data/lords';
 import { Lord, getCinemawareStatRating } from '../core/types';
 import { PALETTE, PALETTE_HEX } from '../data/palette';
-import { CrtOverlay } from '../utils/CrtOverlay';
 
 interface LordCardUI {
   id: string;
@@ -14,9 +13,7 @@ interface LordCardUI {
 export class CharacterSelectScene extends Phaser.Scene {
   private selectedLordId = 'ivanhoe';
   private lordCards: LordCardUI[] = [];
-  private crtOverlay!: CrtOverlay;
 
-  // Detail panel elements
   private detailPanelContainer!: Phaser.GameObjects.Container;
   private lordNameText!: Phaser.GameObjects.Text;
   private lordTitleText!: Phaser.GameObjects.Text;
@@ -24,13 +21,11 @@ export class CharacterSelectScene extends Phaser.Scene {
   private lordBioText!: Phaser.GameObjects.Text;
   private lordQuoteText!: Phaser.GameObjects.Text;
 
-  // Stat Bars & Ratings
   private leadershipRatingText!: Phaser.GameObjects.Text;
   private joustingRatingText!: Phaser.GameObjects.Text;
   private swordplayRatingText!: Phaser.GameObjects.Text;
   private statBarsGraphics!: Phaser.GameObjects.Graphics;
 
-  // Confirm Button
   private confirmBtnContainer!: Phaser.GameObjects.Container;
 
   constructor() {
@@ -39,137 +34,125 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   create(): void {
     GameState.getInstance().setPhase('SELECT_CHARACTER');
+    this.lordCards = [];
 
-    // 1. Medieval Stone Wall Background (640x400)
     this.createBackground();
-
-    // 2. Header Bar
     this.createHeader();
-
-    // 3. Four Selectable Lord Cards (Top Section)
     this.createLordCards();
-
-    // 4. Dossier Detail Panel (Middle Section)
     this.createDetailPanel();
-
-    // 5. "SWEAR OATH / BEGIN CAMPAIGN" Button (Bottom)
     this.createConfirmButton();
-
-    // 6. Select default lord and refresh view
     this.selectLord('ivanhoe');
-
-    // 7. Attach CRT Overlay
-    this.crtOverlay = new CrtOverlay(this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.crtOverlay.destroy();
-    });
   }
 
   private createBackground(): void {
     const bg = this.add.graphics();
-    bg.fillStyle(PALETTE.STONE_DARK, 1);
-    bg.fillRect(0, 0, 640, 400);
+    bg.fillStyle(0x1f222b, 1);
+    bg.fillRect(0, 0, 1280, 720);
 
-    // Stone wall mortar lines
-    bg.fillStyle(PALETTE.SHADOW, 0.4);
-    for (let y = 0; y < 400; y += 16) {
-      bg.fillRect(0, y, 640, 2);
-      const offset = (y % 32 === 0) ? 0 : 32;
-      for (let x = offset; x < 640; x += 64) {
-        bg.fillRect(x, y, 2, 16);
+    // Subtle stone masonry lines
+    bg.fillStyle(0x13151c, 0.55);
+    for (let y = 0; y < 720; y += 36) {
+      bg.fillRect(0, y, 1280, 2);
+      const offset = y % 72 === 0 ? 0 : 60;
+      for (let x = offset; x < 1280; x += 120) {
+        bg.fillRect(x, y, 2, 36);
       }
     }
   }
 
   private createHeader(): void {
     const headerBg = this.add.graphics();
-    headerBg.fillStyle(PALETTE.WOOD_DARK, 0.95);
-    headerBg.fillRect(20, 8, 600, 32);
-    headerBg.lineStyle(2, PALETTE.GOLD_DARK, 1);
-    headerBg.strokeRect(20, 8, 600, 32);
+    headerBg.fillStyle(PALETTE.WOOD_DARK, 0.96);
+    headerBg.fillRoundedRect(60, 20, 1160, 58, 6);
+    headerBg.lineStyle(2.5, PALETTE.GOLD_DARK, 1);
+    headerBg.strokeRoundedRect(60, 20, 1160, 58, 6);
 
-    headerBg.fillStyle(PALETTE.GOLD_BRIGHT, 1);
-    headerBg.fillRect(23, 11, 4, 4);
-    headerBg.fillRect(613, 11, 4, 4);
-    headerBg.fillRect(23, 33, 4, 4);
-    headerBg.fillRect(613, 33, 4, 4);
-
-    this.add.text(320, 24, '★ CHOOSE THY SAXON CHAMPION ★', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '15px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.GOLD_BRIGHT,
-      letterSpacing: 2,
-    }).setOrigin(0.5);
+    this.add
+      .text(640, 49, '★  CHOOSE THY SAXON CHAMPION  ★', {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '26px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.GOLD_BRIGHT,
+        letterSpacing: 3,
+        resolution: 2,
+      })
+      .setOrigin(0.5);
   }
 
   private createLordCards(): void {
     const lords = Object.values(SAXON_LORDS);
-    const cardWidth = 136;
-    const cardHeight = 118;
-    const startX = 86;
-    const spacingX = 156;
-    const cardY = 108;
+    const cardWidth = 264;
+    const cardHeight = 208;
+    const startX = 192;
+    const spacingX = 298;
+    const cardY = 204;
 
     lords.forEach((lord, index) => {
       const cx = startX + index * spacingX;
       const container = this.add.container(cx, cardY);
 
-      // Card Background
       const bg = this.add.graphics();
-      bg.fillStyle(PALETTE.WOOD_DARK, 0.92);
-      bg.fillRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
+      bg.fillStyle(PALETTE.BLACK, 0.5);
+      bg.fillRoundedRect(-cardWidth / 2 + 4, -cardHeight / 2 + 5, cardWidth, cardHeight, 6);
+      bg.fillStyle(PALETTE.WOOD_DARK, 0.96);
+      bg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 6);
       bg.lineStyle(2, PALETTE.WOOD_MID, 1);
-      bg.strokeRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
+      bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 6);
       container.add(bg);
 
-      // Card Portrait (52x52)
-      const portrait = this.add.image(-28, -14, `portrait_${lord.id}`);
-      portrait.setDisplaySize(54, 54);
+      // Crisp 2x Retro Pixel-Art Portrait (96x96) & Shield (66x84)
+      const portrait = this.add
+        .image(-48, -24, `portrait_${lord.id}`)
+        .setDisplaySize(96, 96);
       container.add(portrait);
 
-      // Lord Shield Icon (32x40)
-      const shield = this.add.image(30, -14, `shield_${lord.id}`);
-      shield.setDisplaySize(34, 42);
+      const shield = this.add
+        .image(56, -24, `shield_${lord.id}`)
+        .setDisplaySize(60, 76);
       container.add(shield);
 
-      // Short name banner
       const namePlate = this.add.graphics();
-      namePlate.fillStyle(PALETTE.BLACK, 0.85);
-      namePlate.fillRect(-cardWidth / 2 + 4, 26, cardWidth - 8, 26);
+      namePlate.fillStyle(PALETTE.BLACK, 0.82);
+      namePlate.fillRoundedRect(-cardWidth / 2 + 10, 44, cardWidth - 20, 46, 4);
       container.add(namePlate);
 
-      const nameText = this.add.text(0, 39, lord.name.split(' ')[0], {
-        fontFamily: 'Courier New, monospace',
-        fontSize: '13px',
-        fontStyle: 'bold',
-        color: PALETTE_HEX.PARCHMENT_LIGHT,
-        letterSpacing: 1,
-      }).setOrigin(0.5);
+      const nameText = this.add
+        .text(0, 67, lord.name.toUpperCase(), {
+          fontFamily: 'Cinzel, Georgia, serif',
+          fontSize: '15px',
+          fontStyle: 'bold',
+          color: PALETTE_HEX.PARCHMENT_LIGHT,
+          resolution: 2,
+        })
+        .setOrigin(0.5);
       container.add(nameText);
 
-      // Selection Glow Border
       const selectionBorder = this.add.graphics();
-      selectionBorder.lineStyle(3, PALETTE.GOLD_BRIGHT, 1);
-      selectionBorder.strokeRect(-cardWidth / 2 - 2, -cardHeight / 2 - 2, cardWidth + 4, cardHeight + 4);
+      selectionBorder.lineStyle(4, PALETTE.GOLD_BRIGHT, 1);
+      selectionBorder.strokeRoundedRect(
+        -cardWidth / 2 - 3,
+        -cardHeight / 2 - 3,
+        cardWidth + 6,
+        cardHeight + 6,
+        8
+      );
       selectionBorder.setVisible(false);
       container.add(selectionBorder);
 
-      // Interactive hit area (generous for mobile & desktop)
-      const hitZone = this.add.zone(0, 0, cardWidth + 8, cardHeight + 8);
+      const hitZone = this.add.zone(0, 0, cardWidth + 10, cardHeight + 10);
       hitZone.setInteractive({ useHandCursor: true });
 
       hitZone.on('pointerover', () => {
         if (this.selectedLordId !== lord.id) {
-          bg.lineStyle(2, PALETTE.GOLD_DARK, 1);
-          bg.strokeRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
+          bg.lineStyle(2.5, PALETTE.GOLD_DARK, 1);
+          bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 6);
         }
       });
 
       hitZone.on('pointerout', () => {
         if (this.selectedLordId !== lord.id) {
           bg.lineStyle(2, PALETTE.WOOD_MID, 1);
-          bg.strokeRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight);
+          bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 6);
         }
       });
 
@@ -177,206 +160,182 @@ export class CharacterSelectScene extends Phaser.Scene {
         this.selectLord(lord.id);
       });
 
-      this.lordCards.push({
-        id: lord.id,
-        container,
-        selectionBorder,
-      });
+      this.lordCards.push({ id: lord.id, container, selectionBorder });
     });
   }
 
   private createDetailPanel(): void {
-    this.detailPanelContainer = this.add.container(320, 248);
+    this.detailPanelContainer = this.add.container(640, 456);
 
-    // Parchment Panel Background (600 x 128)
+    const w = 1160;
+    const h = 236;
+
     const panelBg = this.add.graphics();
-    // Drop shadow
-    panelBg.fillStyle(PALETTE.BLACK, 0.8);
-    panelBg.fillRect(-297, -61, 600, 128);
-    // Wood border
+    panelBg.fillStyle(PALETTE.BLACK, 0.65);
+    panelBg.fillRoundedRect(-w / 2 + 5, -h / 2 + 6, w, h, 8);
     panelBg.fillStyle(PALETTE.WOOD_DARK, 1);
-    panelBg.fillRect(-300, -64, 600, 128);
-    // Parchment interior
+    panelBg.fillRoundedRect(-w / 2, -h / 2, w, h, 8);
     panelBg.fillStyle(PALETTE.PARCHMENT_LIGHT, 1);
-    panelBg.fillRect(-294, -58, 588, 116);
-    // Dividing line between Bio (left) and Stats (right)
-    panelBg.lineStyle(1, PALETTE.WOOD_MID, 0.8);
-    panelBg.strokeRect(-294, -58, 588, 116);
-    panelBg.lineBetween(50, -58, 50, 58);
+    panelBg.fillRoundedRect(-w / 2 + 12, -h / 2 + 12, w - 24, h - 24, 5);
+    panelBg.lineStyle(2, PALETTE.WOOD_MID, 0.85);
+    panelBg.strokeRoundedRect(-w / 2 + 16, -h / 2 + 16, w - 32, h - 32, 4);
+    panelBg.lineBetween(90, -h / 2 + 24, 90, h / 2 - 24);
     this.detailPanelContainer.add(panelBg);
 
-    // Left Column: Lord Dossier (width ~330)
-    this.lordNameText = this.add.text(-280, -50, '', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '15px',
+    this.lordNameText = this.add.text(-546, -92, '', {
+      fontFamily: 'Cinzel, Georgia, serif',
+      fontSize: '26px',
       fontStyle: 'bold',
       color: PALETTE_HEX.WOOD_DARK,
-      letterSpacing: 1,
+      resolution: 2,
     });
     this.detailPanelContainer.add(this.lordNameText);
 
-    this.lordTitleText = this.add.text(-280, -32, '', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '12px',
+    this.lordTitleText = this.add.text(-546, -58, '', {
+      fontFamily: 'Georgia, serif',
+      fontSize: '18px',
       fontStyle: 'italic',
       color: PALETTE_HEX.BLOOD_RED,
+      resolution: 2,
     });
     this.detailPanelContainer.add(this.lordTitleText);
 
-    this.lordHomeText = this.add.text(-280, -17, '', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '11px',
+    this.lordHomeText = this.add.text(-546, -28, '', {
+      fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif',
+      fontSize: '15px',
       fontStyle: 'bold',
       color: PALETTE_HEX.WOOD_MID,
+      resolution: 2,
     });
     this.detailPanelContainer.add(this.lordHomeText);
 
-    this.lordBioText = this.add.text(-280, 0, '', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '11px',
-      color: PALETTE_HEX.BLACK,
-      wordWrap: { width: 315 },
-      lineSpacing: 3,
+    this.lordBioText = this.add.text(-546, 4, '', {
+      fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif',
+      fontSize: '15.5px',
+      color: '#1E1A16',
+      wordWrap: { width: 610 },
+      lineSpacing: 5,
+      resolution: 2,
     });
     this.detailPanelContainer.add(this.lordBioText);
 
-    this.lordQuoteText = this.add.text(-280, 36, '', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '10.5px',
+    this.lordQuoteText = this.add.text(-546, 68, '', {
+      fontFamily: 'Georgia, serif',
+      fontSize: '16px',
       fontStyle: 'italic',
       color: PALETTE_HEX.WOOD_DARK,
-      wordWrap: { width: 315 },
+      wordWrap: { width: 610 },
+      resolution: 2,
     });
     this.detailPanelContainer.add(this.lordQuoteText);
 
-    // Right Column: Classic Cinemaware Stats Breakdown
-    const statsHeader = this.add.text(65, -50, 'RATINGS & ABILITY', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '13px',
+    // Right Column: Cinemaware Ability Ratings
+    const statsHeader = this.add.text(122, -90, 'COMBAT & COMMAND RATINGS', {
+      fontFamily: 'Cinzel, Georgia, serif',
+      fontSize: '20px',
       fontStyle: 'bold',
       color: PALETTE_HEX.WOOD_DARK,
-      letterSpacing: 1,
+      resolution: 2,
     });
     this.detailPanelContainer.add(statsHeader);
 
-    // Leadership Label
-    const ldrLbl = this.add.text(65, -28, 'LEADERSHIP', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '11px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.WOOD_DARK,
-    });
-    this.detailPanelContainer.add(ldrLbl);
+    const makeStatRow = (label: string, y: number) => {
+      const lbl = this.add.text(122, y, label, {
+        fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif',
+        fontSize: '15px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.WOOD_DARK,
+        resolution: 2,
+      });
+      const val = this.add
+        .text(546, y, '', {
+          fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif',
+          fontSize: '15px',
+          fontStyle: 'bold',
+          color: PALETTE_HEX.BLOOD_RED,
+          resolution: 2,
+        })
+        .setOrigin(1, 0);
+      this.detailPanelContainer.add([lbl, val]);
+      return val;
+    };
 
-    this.leadershipRatingText = this.add.text(280, -28, '', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '11px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.BLOOD_RED,
-    }).setOrigin(1, 0);
-    this.detailPanelContainer.add(this.leadershipRatingText);
+    this.leadershipRatingText = makeStatRow('LEADERSHIP', -50);
+    this.joustingRatingText = makeStatRow('JOUSTING', 2);
+    this.swordplayRatingText = makeStatRow('SWORDPLAY', 54);
 
-    // Jousting Label
-    const jstLbl = this.add.text(65, -2, 'JOUSTING', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '11px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.WOOD_DARK,
-    });
-    this.detailPanelContainer.add(jstLbl);
-
-    this.joustingRatingText = this.add.text(280, -2, '', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '11px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.BLOOD_RED,
-    }).setOrigin(1, 0);
-    this.detailPanelContainer.add(this.joustingRatingText);
-
-    // Swordplay Label
-    const swdLbl = this.add.text(65, 24, 'SWORDPLAY', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '11px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.WOOD_DARK,
-    });
-    this.detailPanelContainer.add(swdLbl);
-
-    this.swordplayRatingText = this.add.text(280, 24, '', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '11px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.BLOOD_RED,
-    }).setOrigin(1, 0);
-    this.detailPanelContainer.add(this.swordplayRatingText);
-
-    // Stat bars graphics layer
     this.statBarsGraphics = this.add.graphics();
     this.detailPanelContainer.add(this.statBarsGraphics);
   }
 
-  private drawStatBar(g: Phaser.GameObjects.Graphics, x: number, y: number, value: number): void {
+  private drawStatBar(
+    g: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    value: number
+  ): void {
     const totalPips = 10;
-    const pipWidth = 17;
-    const pipHeight = 7;
-    const gap = 4;
+    const pipWidth = 36;
+    const pipHeight = 13;
+    const gap = 6.5;
 
     for (let i = 0; i < totalPips; i++) {
       const px = x + i * (pipWidth + gap);
       if (i < value) {
         g.fillStyle(PALETTE.BLOOD_RED, 1);
-        g.fillRect(px, y, pipWidth, pipHeight);
-        g.fillStyle(PALETTE.GOLD_BRIGHT, 0.7);
-        g.fillRect(px, y, pipWidth, 2);
+        g.fillRoundedRect(px, y, pipWidth, pipHeight, 2);
+        g.fillStyle(PALETTE.GOLD_BRIGHT, 0.65);
+        g.fillRect(px + 2, y + 2, pipWidth - 4, 3);
       } else {
-        g.fillStyle(PALETTE.PARCHMENT_DARK, 0.7);
-        g.fillRect(px, y, pipWidth, pipHeight);
+        g.fillStyle(PALETTE.PARCHMENT_DARK, 0.75);
+        g.fillRoundedRect(px, y, pipWidth, pipHeight, 2);
       }
-      g.lineStyle(1, PALETTE.WOOD_DARK, 0.8);
-      g.strokeRect(px, y, pipWidth, pipHeight);
+      g.lineStyle(1, PALETTE.WOOD_DARK, 0.85);
+      g.strokeRoundedRect(px, y, pipWidth, pipHeight, 2);
     }
   }
 
   private createConfirmButton(): void {
-    this.confirmBtnContainer = this.add.container(320, 362);
+    this.confirmBtnContainer = this.add.container(640, 646);
 
-    const btnWidth = 380;
-    const btnHeight = 36;
+    const btnWidth = 540;
+    const btnHeight = 56;
 
     const bg = this.add.graphics();
-    // Drop shadow
-    bg.fillStyle(PALETTE.BLACK, 0.75);
-    bg.fillRect(-btnWidth / 2 + 3, -btnHeight / 2 + 3, btnWidth, btnHeight);
-    // Button body
-    bg.fillStyle(PALETTE.WOOD_DARK, 1);
-    bg.fillRect(-btnWidth / 2, -btnHeight / 2, btnWidth, btnHeight);
-    // Gold trim
-    bg.lineStyle(2, PALETTE.GOLD_DARK, 1);
-    bg.strokeRect(-btnWidth / 2, -btnHeight / 2, btnWidth, btnHeight);
+    const drawBtn = (hover: boolean) => {
+      bg.clear();
+      bg.fillStyle(PALETTE.BLACK, 0.65);
+      bg.fillRoundedRect(-btnWidth / 2 + 4, -btnHeight / 2 + 5, btnWidth, btnHeight, 6);
+      bg.fillStyle(hover ? PALETTE.BLOOD_RED : PALETTE.WOOD_DARK, 1);
+      bg.fillRoundedRect(-btnWidth / 2, -btnHeight / 2, btnWidth, btnHeight, 6);
+      bg.lineStyle(2.5, hover ? PALETTE.GOLD_BRIGHT : PALETTE.GOLD_DARK, 1);
+      bg.strokeRoundedRect(-btnWidth / 2, -btnHeight / 2, btnWidth, btnHeight, 6);
+    };
+    drawBtn(false);
     this.confirmBtnContainer.add(bg);
 
-    const btnText = this.add.text(0, 0, '⚔  SWEAR OATH / BEGIN CAMPAIGN  ⚔', {
-      fontFamily: 'Courier New, monospace',
-      fontSize: '13px',
-      fontStyle: 'bold',
-      color: PALETTE_HEX.GOLD_BRIGHT,
-      letterSpacing: 1,
-    }).setOrigin(0.5);
+    const btnText = this.add
+      .text(0, 0, '⚔   SWEAR OATH & BEGIN CAMPAIGN   ⚔', {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '20px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.GOLD_BRIGHT,
+        letterSpacing: 2,
+        resolution: 2,
+      })
+      .setOrigin(0.5);
     this.confirmBtnContainer.add(btnText);
 
-    // Generous touch target
-    const hitZone = this.add.zone(0, 0, btnWidth + 12, btnHeight + 10);
+    const hitZone = this.add.zone(0, 0, btnWidth + 12, btnHeight + 12);
     hitZone.setInteractive({ useHandCursor: true });
 
     hitZone.on('pointerover', () => {
-      bg.lineStyle(2, PALETTE.GOLD_BRIGHT, 1);
-      bg.strokeRect(-btnWidth / 2, -btnHeight / 2, btnWidth, btnHeight);
+      drawBtn(true);
       btnText.setColor(PALETTE_HEX.PARCHMENT_LIGHT);
     });
 
     hitZone.on('pointerout', () => {
-      bg.lineStyle(2, PALETTE.GOLD_DARK, 1);
-      bg.strokeRect(-btnWidth / 2, -btnHeight / 2, btnWidth, btnHeight);
+      drawBtn(false);
       btnText.setColor(PALETTE_HEX.GOLD_BRIGHT);
     });
 
@@ -391,28 +350,32 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.selectedLordId = lordId;
     const lord: Lord = SAXON_LORDS[lordId];
 
-    // Update selection indicators
     for (const card of this.lordCards) {
       card.selectionBorder.setVisible(card.id === lordId);
     }
 
-    // Update Dossier Info
     this.lordNameText.setText(lord.name.toUpperCase());
     this.lordTitleText.setText(lord.title);
-    this.lordHomeText.setText(`Home Castle: ${lord.homeTerritoryId.toUpperCase()} • Gold: ${lord.gold}`);
+    this.lordHomeText.setText(
+      `Ancestral Stronghold: ${lord.homeTerritoryId.toUpperCase()}  •  Starting Treasury: ${lord.gold} Gold`
+    );
     this.lordBioText.setText(lord.bio);
     this.lordQuoteText.setText(lord.historicalQuote);
 
-    // Update Cinemaware Rating Labels
-    this.leadershipRatingText.setText(`${getCinemawareStatRating(lord.leadership)} (${lord.leadership}/10)`);
-    this.joustingRatingText.setText(`${getCinemawareStatRating(lord.jousting)} (${lord.jousting}/10)`);
-    this.swordplayRatingText.setText(`${getCinemawareStatRating(lord.swordplay)} (${lord.swordplay}/10)`);
+    this.leadershipRatingText.setText(
+      `${getCinemawareStatRating(lord.leadership)} (${lord.leadership}/10)`
+    );
+    this.joustingRatingText.setText(
+      `${getCinemawareStatRating(lord.jousting)} (${lord.jousting}/10)`
+    );
+    this.swordplayRatingText.setText(
+      `${getCinemawareStatRating(lord.swordplay)} (${lord.swordplay}/10)`
+    );
 
-    // Redraw Stat Bars
     this.statBarsGraphics.clear();
-    this.drawStatBar(this.statBarsGraphics, 65, -16, lord.leadership);
-    this.drawStatBar(this.statBarsGraphics, 65, 10, lord.jousting);
-    this.drawStatBar(this.statBarsGraphics, 65, 36, lord.swordplay);
+    this.drawStatBar(this.statBarsGraphics, 122, -26, lord.leadership);
+    this.drawStatBar(this.statBarsGraphics, 122, 26, lord.jousting);
+    this.drawStatBar(this.statBarsGraphics, 122, 78, lord.swordplay);
   }
 
   private startCampaign(): void {
