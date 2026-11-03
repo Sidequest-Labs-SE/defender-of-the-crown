@@ -156,8 +156,8 @@ export class CharacterSelectScene extends Phaser.Scene {
       selectionBorder.setVisible(false);
       container.add(selectionBorder);
 
-      // Interactive hit area
-      const hitZone = this.add.zone(0, 0, cardWidth, cardHeight);
+      // Interactive hit area (enlarged for touch screens & mobile browsers)
+      const hitZone = this.add.zone(0, 0, cardWidth + 6, cardHeight + 6);
       hitZone.setInteractive({ useHandCursor: true });
 
       hitZone.on('pointerover', () => {
@@ -337,7 +337,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   private createConfirmButton(): void {
     this.confirmBtnContainer = this.add.container(160, 182);
 
-    const btnWidth = 190;
+    const btnWidth = 200;
     const btnHeight = 22;
 
     const bg = this.add.graphics();
@@ -361,7 +361,8 @@ export class CharacterSelectScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.confirmBtnContainer.add(btnText);
 
-    const hitZone = this.add.zone(0, 0, btnWidth, btnHeight);
+    // Enlarged touch target for mobile and desktop
+    const hitZone = this.add.zone(0, 0, btnWidth + 10, btnHeight + 8);
     hitZone.setInteractive({ useHandCursor: true });
 
     hitZone.on('pointerover', () => {

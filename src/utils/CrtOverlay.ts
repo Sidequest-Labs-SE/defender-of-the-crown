@@ -47,20 +47,20 @@ export class CrtOverlay {
     vignette.fillRect(316, 196, 4, 4);
     this.container.add(vignette);
 
-    // 3. Compact CRT Toggle Badge in top right corner
+    // 3. Compact CRT Toggle Badge in top right corner (optimized for touch & mouse)
     const badgeBg = this.scene.add.graphics();
-    badgeBg.fillStyle(PALETTE.BLACK, 0.7);
-    badgeBg.fillRect(268, 3, 50, 10);
-    badgeBg.lineStyle(1, PALETTE.GOLD_DARK, 0.8);
-    badgeBg.strokeRect(268, 3, 50, 10);
+    badgeBg.fillStyle(PALETTE.BLACK, 0.85);
+    badgeBg.fillRect(260, 3, 57, 12);
+    badgeBg.lineStyle(1, PALETTE.GOLD_DARK, 0.9);
+    badgeBg.strokeRect(260, 3, 57, 12);
     this.container.add(badgeBg);
 
     this.toggleButtonText = this.scene.add.text(
-      293,
-      8,
+      288,
+      9,
       CrtOverlay.isEnabled ? 'CRT [ON]' : 'CRT [OFF]',
       {
-        fontSize: '7px',
+        fontSize: '7.5px',
         color: CrtOverlay.isEnabled ? '#F2D06B' : '#787882',
         fontFamily: 'monospace',
       }
@@ -68,8 +68,8 @@ export class CrtOverlay {
     this.toggleButtonText.setOrigin(0.5);
     this.container.add(this.toggleButtonText);
 
-    // Make badge clickable
-    const hitZone = this.scene.add.zone(293, 8, 52, 12);
+    // Make badge clickable with generous touch target
+    const hitZone = this.scene.add.zone(288, 9, 62, 18);
     hitZone.setInteractive({ useHandCursor: true });
     hitZone.on('pointerdown', () => this.toggle());
     this.container.add(hitZone);

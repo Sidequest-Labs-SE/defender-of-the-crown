@@ -178,7 +178,7 @@ export class MapScene extends Phaser.Scene {
     }).setOrigin(0.5);
     btnContainer.add(btnText);
 
-    const hitZone = this.add.zone(0, 0, 220, 18);
+    const hitZone = this.add.zone(0, 0, 230, 26);
     hitZone.setInteractive({ useHandCursor: true });
     hitZone.on('pointerover', () => {
       btnBg.lineStyle(1, PALETTE.GOLD_BRIGHT, 1);

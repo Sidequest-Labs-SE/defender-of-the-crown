@@ -6,7 +6,7 @@ import { MapScene } from './scenes/MapScene';
 
 /**
  * Defender of the Crown - Amiga 1986 Modernized Remake
- * Main Entry Point with Low-Res 320x200 Pixel-Art Scaling Pipeline
+ * Main Entry Point with Responsive Low-Res 320x200 Pixel-Art Scaling Pipeline
  */
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -17,13 +17,11 @@ const config: Phaser.Types.Core.GameConfig = {
   roundPixels: true,
   antialias: false,
   backgroundColor: '#000000',
-  zoom: 4,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
     width: 320,
     height: 200,
-    zoom: 4,
   },
   scene: [BootScene, TitleScene, CharacterSelectScene, MapScene],
 };
