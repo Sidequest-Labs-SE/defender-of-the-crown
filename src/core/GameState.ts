@@ -2,18 +2,43 @@ import {
   ActionResult,
   BattleResult,
   CampaignState,
+  CaptiveDamselEvent,
   GamePhase,
+  JoustOutcomeSummary,
+  JoustStakesType,
   Lord,
   MONTH_NAMES,
   MoveResult,
+  PendingJoustContext,
+  PendingSwordplayContext,
   ROBIN_HOOD_MERRY_MEN_COUNT,
+  SaxonDamselId,
   Territory,
   UNIT_COSTS,
   UnitType,
 } from './types';
 import { ALL_LORDS, SAXON_LORDS, NORMAN_LORDS } from '../data/lords';
+import { SAXON_DAMSELS, SAXON_DAMSEL_IDS } from '../data/damsels';
 import { INITIAL_TERRITORIES } from '../data/territories';
 import { CombatResolver } from './CombatResolver';
+import { SwordplayEngine } from './SwordplayEngine';
+import { JoustEngine } from './JoustEngine';
+
+export interface RaidableCastleTarget {
+  lord: Lord;
+  territoryId: string;
+  territoryName: string;
+  estimatedLoot: number;
+}
+
+export interface JoustableLordTarget {
+  lord: Lord;
+  canWagerLand: boolean;
+  playerLandCandidates: Territory[];
+  rivalLandCandidates: Territory[];
+  wagerTerritoryId?: string;
+  territoryName?: string;
+}
 
 export interface ReachableTerritories {
   friendlyIds: string[];
@@ -36,6 +61,11 @@ export class GameState {
     robinHoodUsesLeft: 3,
     robinHoodUsedThisTurn: false,
     hasConqueredThisTurn: {},
+    hasRaidedThisTurn: false,
+    hasJoustedThisTurn: false,
+    captiveDamsel: null,
+    rescuedDamselIds: [],
+    marriedDamselId: null,
     selectedLordId: 'ivanhoe',
     activeLords: {},
     territories: {},
@@ -77,6 +107,11 @@ export class GameState {
       robinHoodUsesLeft: 3,
       robinHoodUsedThisTurn: false,
       hasConqueredThisTurn: {},
+      hasRaidedThisTurn: false,
+      hasJoustedThisTurn: false,
+      captiveDamsel: null,
+      rescuedDamselIds: [],
+      marriedDamselId: null,
       selectedLordId: 'ivanhoe',
       activeLords: clonedLords,
       territories: clonedTerritories,
@@ -169,6 +204,11 @@ export class GameState {
       robinHoodUsesLeft: 3,
       robinHoodUsedThisTurn: false,
       hasConqueredThisTurn: {},
+      hasRaidedThisTurn: false,
+      hasJoustedThisTurn: false,
+      captiveDamsel: null,
+      rescuedDamselIds: [],
+      marriedDamselId: null,
       selectedLordId,
       activeLords,
       territories,
@@ -517,12 +557,12 @@ export class GameState {
 
   /**
    * Moves a Lord's Campaign Army to an adjacent or connected friendly territory,
-   * annexing Neutral territories or triggering CombatResolver for Enemy territories.
+   * annexing Neutral territories or triggering CombatResolver / BattleScene for Enemy territories.
    */
   public moveCampaignArmy(
     lordId: string,
     targetTerritoryId: string,
-    options?: { ignoreTurnLimit?: boolean }
+    options?: { ignoreTurnLimit?: boolean; interactiveBattle?: boolean }
   ): MoveResult {
     if (this.state.victoryStatus !== 'ONGOING') {
       return {
@@ -630,7 +670,49 @@ export class GameState {
       };
     }
 
-    // 3. Enemy Territory Invasion via CombatResolver
+    // 3A. Interactive Tactical Battle Interception (Sprint 3 BattleScene)
+    if (options?.interactiveBattle) {
+      const preview = CombatResolver.calculateBattlePreview(
+        this.state,
+        lordId,
+        targetTerritoryId
+      );
+
+      if (!preview.allowed) {
+        return {
+          success: false,
+          outcome: 'BLOCKED',
+          message: preview.blockReason ?? CombatResolver.CASTLE_SIEGE_BLOCK_MSG,
+        };
+      }
+
+      const isPlayerAttacking = lord.isPlayer;
+      const isPlayerDefending = targetTerritory.ownerId === this.state.selectedLordId;
+      const hasDefendingTroops = preview.defenderSoldiers + preview.defenderKnights > 0;
+
+      // Launch interactive SiegeScene (if Castle) or BattleScene whenever Player attacks, or when AI attacks a defended Player shire
+      if (isPlayerAttacking || (isPlayerDefending && hasDefendingTroops)) {
+        this.state.phase = targetTerritory.hasCastle ? 'SIEGE' : 'BATTLE';
+        this.notify();
+        return {
+          success: true,
+          outcome: 'BATTLE_PENDING',
+          message: targetTerritory.hasCastle
+            ? `${lord.name} lays siege to ${targetTerritory.name}!`
+            : `${lord.name} marches to battle in ${targetTerritory.name}!`,
+          pendingBattle: {
+            attackerId: lordId,
+            defenderId: targetTerritory.ownerId,
+            territoryId: targetTerritoryId,
+            originTerritoryId: lord.currentTerritoryId,
+            hasCastle: targetTerritory.hasCastle,
+            mode: isPlayerAttacking ? 'PLAYER_ATTACK' : 'PLAYER_DEFENSE',
+          },
+        };
+      }
+    }
+
+    // 3B. Background Auto-Resolve via CombatResolver (AI-vs-AI or undefended shire)
     const battle = CombatResolver.resolveInvasionOnState(
       this.state,
       lordId,
@@ -656,6 +738,18 @@ export class GameState {
       message: battle.message,
       battle,
     };
+  }
+
+  /**
+   * Executes a controlled state mutation from a core subsystem (e.g. BattleEngine) and notifies subscribers.
+   */
+  public mutateState<T>(mutator: (state: CampaignState) => T): T {
+    const result = mutator(this.state);
+    if (this.state.log.length > 50) {
+      this.state.log = this.state.log.slice(-50);
+    }
+    this.notify();
+    return result;
   }
 
   /**
@@ -714,6 +808,526 @@ export class GameState {
   }
 
   /**
+   * Lists all active, undefeated rival Lords eligible for a Night Castle Raid
+   * (owns at least 1 Castle or holds gold >= 5), sorted by estimated vault loot descending.
+   */
+  public getRaidableTargets(): RaidableCastleTarget[] {
+    const targets: RaidableCastleTarget[] = [];
+
+    for (const lord of Object.values(this.state.activeLords)) {
+      if (!lord.isActive || lord.isDefeated || lord.isPlayer) {
+        continue;
+      }
+
+      const lordCastles = this.getLordTerritories(lord.id).filter(
+        (t) => t.hasCastle
+      );
+      const anyOwned = this.getLordTerritories(lord.id);
+
+      if (lord.gold < 5 && lordCastles.length === 0) {
+        continue;
+      }
+
+      const stronghold =
+        lordCastles.find((t) => t.id === lord.homeTerritoryId) ??
+        lordCastles[0] ??
+        anyOwned[0] ??
+        this.state.territories[lord.homeTerritoryId];
+
+      if (!stronghold) continue;
+
+      const loot = SwordplayEngine.calculateRaidLoot(lord.gold);
+      targets.push({
+        lord: JSON.parse(JSON.stringify(lord)),
+        territoryId: stronghold.id,
+        territoryName: stronghold.name,
+        estimatedLoot: loot.totalGoldStolen,
+      });
+    }
+
+    targets.sort((a, b) => b.estimatedLoot - a.estimatedLoot);
+    return targets;
+  }
+
+  /**
+   * Initiates an interactive Night Castle Raid against a rival Lord's stronghold.
+   */
+  public initiateCastleRaid(targetLordId: string): {
+    success: boolean;
+    message: string;
+    context?: PendingSwordplayContext;
+  } {
+    const check = SwordplayEngine.canRaidLord(this.state, targetLordId);
+    if (!check.success) {
+      return check;
+    }
+
+    const targetLord = this.state.activeLords[targetLordId]!;
+    const lordCastles = this.getLordTerritories(targetLord.id).filter(
+      (t) => t.hasCastle
+    );
+    const anyOwned = this.getLordTerritories(targetLord.id);
+    const stronghold =
+      lordCastles.find((t) => t.id === targetLord.homeTerritoryId) ??
+      lordCastles[0] ??
+      anyOwned[0] ??
+      this.state.territories[targetLord.homeTerritoryId];
+
+    const territoryId = stronghold ? stronghold.id : targetLord.homeTerritoryId;
+    const context: PendingSwordplayContext = {
+      missionType: 'RAID',
+      attackerId: this.state.selectedLordId,
+      targetLordId: targetLord.id,
+      targetTerritoryId: territoryId,
+    };
+
+    this.state.phase = 'RAID';
+    this.notify();
+
+    return {
+      success: true,
+      message: `${this.getPlayerLord().name} infiltrates ${
+        stronghold?.name ?? 'the enemy castle'
+      } under cover of darkness!`,
+      context,
+    };
+  }
+
+  /**
+   * Spawns a Captured Saxon Damsel campaign event (triggered periodically on Turns 3, 6, 9, 12...
+   * or explicitly on demand). Prefers an active Norman Lord holding a Castle.
+   */
+  public triggerDamselCaptureEvent(
+    preferredDamselId?: SaxonDamselId,
+    preferredCaptorId?: string
+  ): CaptiveDamselEvent | null {
+    if (this.state.victoryStatus !== 'ONGOING') {
+      return null;
+    }
+
+    const unrescuedIds = SAXON_DAMSEL_IDS.filter(
+      (id) => !this.state.rescuedDamselIds.includes(id)
+    );
+    const chosenDamselId =
+      preferredDamselId ??
+      (unrescuedIds.length > 0 ? unrescuedIds[0] : null);
+
+    if (!chosenDamselId) {
+      return null;
+    }
+
+    // Select an active Norman castle lord (or fallback active rival lord with a castle)
+    const activeRivals = Object.values(this.state.activeLords).filter(
+      (l) => l.isActive && !l.isDefeated && !l.isPlayer
+    );
+    const normanCaptors = activeRivals.filter(
+      (l) => l.faction === 'norman' && this.getLordCastleCount(l.id) > 0
+    );
+    const fallbackCaptors = activeRivals.filter(
+      (l) => this.getLordCastleCount(l.id) > 0
+    );
+
+    let captor: Lord | undefined;
+    if (preferredCaptorId && this.state.activeLords[preferredCaptorId]) {
+      const cand = this.state.activeLords[preferredCaptorId];
+      if (cand.isActive && !cand.isDefeated && !cand.isPlayer) {
+        captor = cand;
+      }
+    }
+    if (!captor) {
+      const pool = normanCaptors.length > 0 ? normanCaptors : fallbackCaptors;
+      if (pool.length === 0) return null;
+      const idx = (this.state.turn + this.state.rescuedDamselIds.length) % pool.length;
+      captor = pool[idx];
+    }
+
+    const castles = this.getLordTerritories(captor.id).filter((t) => t.hasCastle);
+    const castleTerr =
+      castles.find((t) => t.id === captor!.homeTerritoryId) ??
+      castles[0] ??
+      this.state.territories[captor.homeTerritoryId];
+
+    if (!castleTerr) return null;
+
+    const damsel = SAXON_DAMSELS[chosenDamselId];
+    const event: CaptiveDamselEvent = {
+      damselId: chosenDamselId,
+      captorLordId: captor.id,
+      castleTerritoryId: castleTerr.id,
+      turnCaptured: this.state.turn,
+    };
+
+    this.state.captiveDamsel = event;
+    const alertMsg = `[DAMSEL IN DISTRESS] ${damsel.name} is held captive by ${captor.name} in ${castleTerr.name}!`;
+    this.state.log.push(alertMsg);
+    if (this.state.log.length > 50) {
+      this.state.log = this.state.log.slice(-50);
+    }
+    this.notify();
+
+    return JSON.parse(JSON.stringify(event));
+  }
+
+  /**
+   * Initiates an interactive Damsel Rescue mission into SwordplayScene when a Saxon Lady is captive.
+   */
+  public initiateDamselRescue(): {
+    success: boolean;
+    message: string;
+    context?: PendingSwordplayContext;
+  } {
+    if (this.state.victoryStatus !== 'ONGOING') {
+      return { success: false, message: 'The campaign has already concluded.' };
+    }
+    if (!this.state.captiveDamsel) {
+      return {
+        success: false,
+        message: 'No Saxon Lady is currently held captive!',
+      };
+    }
+
+    const ev = this.state.captiveDamsel;
+    const captor = this.state.activeLords[ev.captorLordId];
+    if (!captor || !captor.isActive || captor.isDefeated) {
+      this.state.captiveDamsel = null;
+      this.notify();
+      return {
+        success: false,
+        message: 'Her captor has already been overthrown!',
+      };
+    }
+
+    const damsel = SAXON_DAMSELS[ev.damselId];
+    const terr = this.state.territories[ev.castleTerritoryId];
+    const context: PendingSwordplayContext = {
+      missionType: 'RESCUE',
+      attackerId: this.state.selectedLordId,
+      targetLordId: ev.captorLordId,
+      targetTerritoryId: ev.castleTerritoryId,
+      damselId: ev.damselId,
+    };
+
+    this.state.phase = 'RESCUE';
+    this.notify();
+
+    return {
+      success: true,
+      message: `${this.getPlayerLord().name} rides to ${
+        terr?.name ?? 'the keep'
+      } to rescue ${damsel.name}!`,
+      context,
+    };
+  }
+
+  /**
+   * Lists all active, undefeated rival Lords eligible for a Tournament Joust.
+   */
+  public getJoustableTargets(
+    _callerId?: string,
+    stakesFilter?: JoustStakesType
+  ): JoustableLordTarget[] {
+    const targets: JoustableLordTarget[] = [];
+    const player = this.getPlayerLord();
+    if (!player) return targets;
+
+    for (const lord of Object.values(this.state.activeLords)) {
+      if (!lord.isActive || lord.isDefeated || lord.isPlayer) {
+        continue;
+      }
+
+      const landCheck = JoustEngine.canWagerLand(this.state, player.id, lord.id);
+      if (stakesFilter === 'LAND' && !landCheck.allowed) {
+        continue;
+      }
+
+      const wagerTerr = landCheck.rivalTerritories[0];
+      targets.push({
+        lord: JSON.parse(JSON.stringify(lord)),
+        canWagerLand: landCheck.allowed,
+        playerLandCandidates: landCheck.playerTerritories,
+        rivalLandCandidates: landCheck.rivalTerritories,
+        wagerTerritoryId: wagerTerr?.id,
+        territoryName: wagerTerr?.name,
+      });
+    }
+
+    // Sort by jousting skill descending
+    targets.sort((a, b) => b.lord.jousting - a.lord.jousting);
+    return targets;
+  }
+
+  /**
+   * Initiates an interactive Tournament Joust against a rival Lord.
+   */
+  public initiateJoust(
+    targetLordId: string,
+    stakesType: JoustStakesType = 'FAME',
+    playerWagerTerritoryId?: string,
+    rivalWagerTerritoryId?: string
+  ): {
+    success: boolean;
+    message: string;
+    context?: PendingJoustContext;
+  } {
+    if (this.state.victoryStatus !== 'ONGOING') {
+      return { success: false, message: 'The campaign has already concluded.' };
+    }
+
+    if (this.state.hasJoustedThisTurn) {
+      return {
+        success: false,
+        message: 'Thou hast already entered the Tournament lists this month! Advance the turn first.',
+      };
+    }
+
+    const player = this.getPlayerLord();
+    const targetLord = this.state.activeLords[targetLordId];
+    if (!targetLord || !targetLord.isActive || targetLord.isDefeated) {
+      return { success: false, message: 'Target Lord is inactive or defeated.' };
+    }
+    if (targetLord.isPlayer || targetLord.id === player.id) {
+      return { success: false, message: 'Cannot tilt against thyself!' };
+    }
+
+    if (stakesType === 'LAND') {
+      const landCheck = JoustEngine.canWagerLand(this.state, player.id, targetLord.id);
+      if (!landCheck.allowed) {
+        return { success: false, message: landCheck.reason ?? 'Cannot wager Land stakes.' };
+      }
+
+      let pWager = playerWagerTerritoryId;
+      let rWager = rivalWagerTerritoryId;
+
+      // If 3rd parameter was rival's territory, assign it to rWager
+      if (pWager && landCheck.rivalTerritories.some((t) => t.id === pWager) && !rWager) {
+        rWager = pWager;
+        pWager = undefined;
+      }
+
+      if (!pWager) {
+        pWager = landCheck.playerTerritories[0]?.id;
+      }
+      if (!rWager) {
+        rWager = landCheck.rivalTerritories[0]?.id;
+      }
+
+      if (!pWager || !rWager) {
+        return { success: false, message: 'Both lords must have a valid non-Home shire to wager.' };
+      }
+
+      const context: PendingJoustContext = {
+        challengerId: player.id,
+        opponentId: targetLord.id,
+        stakesType: 'LAND',
+        challengerLordId: player.id,
+        rivalLordId: targetLord.id,
+        stakes: 'LAND',
+        playerWagerTerritoryId: pWager,
+        rivalWagerTerritoryId: rWager,
+        wagerTerritoryId: rWager,
+        passesCompleted: 0,
+        maxPasses: 3,
+        playerScore: 0,
+        challengerScore: 0,
+        rivalScore: 0,
+        challengerBrokenLances: 0,
+        rivalBrokenLances: 0,
+        matchStatus: 'IN_PROGRESS',
+        history: [],
+      };
+
+      this.state.phase = 'JOUST';
+      this.notify();
+
+      return {
+        success: true,
+        message: `Royal heralds proclaim a Joust for Land! ${player.name} tilts against ${targetLord.name}!`,
+        context,
+      };
+    }
+
+    // FAME STAKES
+    const context: PendingJoustContext = {
+      challengerId: player.id,
+      opponentId: targetLord.id,
+      stakesType: 'FAME',
+      challengerLordId: player.id,
+      rivalLordId: targetLord.id,
+      stakes: 'FAME',
+      passesCompleted: 0,
+      maxPasses: 3,
+      playerScore: 0,
+      challengerScore: 0,
+      rivalScore: 0,
+      challengerBrokenLances: 0,
+      rivalBrokenLances: 0,
+      matchStatus: 'IN_PROGRESS',
+      history: [],
+    };
+
+    this.state.phase = 'JOUST';
+    this.notify();
+
+    return {
+      success: true,
+      message: `Royal heralds proclaim a Joust for Fame and Glory! ${player.name} tilts against ${targetLord.name}!`,
+      context,
+    };
+  }
+
+  /**
+   * Commits the completed Joust outcome into CampaignState.
+   */
+  public commitJoustOutcome(summary: JoustOutcomeSummary): void {
+    this.state.phase = 'CAMPAIGN_MAP';
+    this.state.hasJoustedThisTurn = true;
+
+    const winnerId = summary.winnerLordId;
+    const isPlayerVictory = winnerId === this.state.selectedLordId;
+    const player = this.getPlayerLord();
+
+    if (summary.goldAwarded && summary.goldAwarded > 0) {
+      if (winnerId && this.state.activeLords[winnerId]) {
+        this.state.activeLords[winnerId].gold += summary.goldAwarded;
+      }
+    }
+
+    if (isPlayerVictory) {
+      player.leadership = Math.min(10, player.leadership + 1);
+      player.jousting = Math.min(10, player.jousting + 1);
+    }
+
+    const terrId = summary.territoryTransferredId;
+    if (terrId) {
+      const terr = this.state.territories[terrId];
+      if (terr && winnerId) {
+        terr.ownerId = winnerId;
+      }
+    }
+
+    const chronicle =
+      summary.narrativeChronicle ||
+      summary.chronicleMessage ||
+      'The Royal Tournament has ended.';
+    this.state.log.push(chronicle);
+    if (this.state.log.length > 50) {
+      this.state.log = this.state.log.slice(-50);
+    }
+    this.notify();
+  }
+
+  // ==========================================================================
+  // CAMPAIGN SAVE / LOAD PERSISTENCE
+  // ==========================================================================
+
+  public static readonly SAVE_STORAGE_KEY = 'dotc_save_v1';
+
+  /**
+   * Serializes current CampaignState to a JSON string with metadata.
+   */
+  public serializeCampaign(): string {
+    return JSON.stringify({
+      version: 1,
+      savedAt: Date.now(),
+      state: this.state,
+    });
+  }
+
+  /**
+   * Deserializes a JSON string into active CampaignState, validating its integrity.
+   */
+  public deserializeCampaign(jsonStr: string): boolean {
+    try {
+      const parsed = JSON.parse(jsonStr) as {
+        version?: number;
+        state?: CampaignState;
+      } & CampaignState;
+
+      const stateToLoad =
+        parsed.state && typeof parsed.version === 'number'
+          ? parsed.state
+          : (parsed as CampaignState);
+
+      if (
+        typeof stateToLoad.year !== 'number' ||
+        typeof stateToLoad.month !== 'number' ||
+        typeof stateToLoad.turn !== 'number' ||
+        !stateToLoad.activeLords ||
+        !stateToLoad.territories ||
+        !stateToLoad.selectedLordId
+      ) {
+        return false;
+      }
+
+      // Ensure all fields are preserved
+      this.state = {
+        ...stateToLoad,
+        hasConqueredThisTurn: stateToLoad.hasConqueredThisTurn ?? {},
+        hasRaidedThisTurn: Boolean(stateToLoad.hasRaidedThisTurn),
+        hasJoustedThisTurn: Boolean(stateToLoad.hasJoustedThisTurn),
+        captiveDamsel: stateToLoad.captiveDamsel ?? null,
+        rescuedDamselIds: stateToLoad.rescuedDamselIds ?? [],
+        marriedDamselId: stateToLoad.marriedDamselId ?? null,
+      };
+
+      this.notify();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Saves active campaign to localStorage.
+   */
+  public saveToStorage(slotKey = GameState.SAVE_STORAGE_KEY): boolean {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return false;
+      }
+      const data = this.serializeCampaign();
+      window.localStorage.setItem(slotKey, data);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Loads campaign from localStorage.
+   */
+  public loadFromStorage(slotKey = GameState.SAVE_STORAGE_KEY): boolean {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return false;
+      }
+      const data = window.localStorage.getItem(slotKey);
+      if (!data) return false;
+      return this.deserializeCampaign(data);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Checks whether a saved campaign exists in localStorage.
+   */
+  public hasSavedCampaign(slotKey = GameState.SAVE_STORAGE_KEY): boolean {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return false;
+      }
+      const data = window.localStorage.getItem(slotKey);
+      if (!data) return false;
+      const parsed = JSON.parse(data);
+      const st = parsed.state ?? parsed;
+      return Boolean(st && st.selectedLordId && st.activeLords);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Advances the campaign calendar by 1 month (rolling 12 -> 1 and incrementing year)
    * and resets per-turn action flags.
    */
@@ -727,6 +1341,8 @@ export class GameState {
     this.state.turn += 1;
     this.state.robinHoodUsedThisTurn = false;
     this.state.hasConqueredThisTurn = {};
+    this.state.hasRaidedThisTurn = false;
+    this.state.hasJoustedThisTurn = false;
 
     this.notify();
     return {
@@ -742,6 +1358,8 @@ export class GameState {
   public resetTurnLocks(): void {
     this.state.robinHoodUsedThisTurn = false;
     this.state.hasConqueredThisTurn = {};
+    this.state.hasRaidedThisTurn = false;
+    this.state.hasJoustedThisTurn = false;
     this.notify();
   }
 

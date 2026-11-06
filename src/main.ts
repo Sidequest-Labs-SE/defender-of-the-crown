@@ -3,6 +3,10 @@ import { BootScene } from './scenes/BootScene';
 import { TitleScene } from './scenes/TitleScene';
 import { CharacterSelectScene } from './scenes/CharacterSelectScene';
 import { MapScene } from './scenes/MapScene';
+import { SiegeScene } from './scenes/SiegeScene';
+import { BattleScene } from './scenes/BattleScene';
+import { SwordplayScene } from './scenes/SwordplayScene';
+import { JoustScene } from './scenes/JoustScene';
 
 /**
  * Defender of the Crown - 16:9 HD Hybrid Edition (1280x720)
@@ -24,7 +28,16 @@ const config: Phaser.Types.Core.GameConfig = {
     width: 1280,
     height: 720,
   },
-  scene: [BootScene, TitleScene, CharacterSelectScene, MapScene],
+  scene: [
+    BootScene,
+    TitleScene,
+    CharacterSelectScene,
+    MapScene,
+    SiegeScene,
+    BattleScene,
+    SwordplayScene,
+    JoustScene,
+  ],
 };
 
 window.addEventListener('DOMContentLoaded', () => {

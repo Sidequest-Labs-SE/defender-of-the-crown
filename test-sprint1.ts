@@ -70,10 +70,20 @@ assert(notts.ownerId === null, 'Nottingham must start neutral');
 const neutralTerritories = Object.values(campaign.territories).filter(t => t.ownerId === null);
 assert(neutralTerritories.length === 12, `Must have 12 neutral territories, found ${neutralTerritories.length}`);
 
-// Test switching lord to Cedric
+// Test switching lord to Cedric, Geoffrey, and Wolfric
 const campaign2 = stateMgr.startNewCampaign('cedric');
 assert(campaign2.selectedLordId === 'cedric', 'Switched to Cedric');
 assert(campaign2.activeLords.cedric.isPlayer === true, 'Cedric is now player');
 assert(campaign2.territories.shropshire.ownerId === 'cedric', 'Shropshire owner must be cedric');
+
+const campaign3 = stateMgr.startNewCampaign('geoffrey');
+assert(campaign3.selectedLordId === 'geoffrey', 'Switched to Geoffrey');
+assert(campaign3.activeLords.geoffrey.isPlayer === true, 'Geoffrey is now player');
+assert(campaign3.territories.northumberland.ownerId === 'geoffrey', 'Northumberland owner must be geoffrey');
+
+const campaign4 = stateMgr.startNewCampaign('wolfric');
+assert(campaign4.selectedLordId === 'wolfric', 'Switched to Wolfric');
+assert(campaign4.activeLords.wolfric.isPlayer === true, 'Wolfric is now player');
+assert(campaign4.territories.cumberland.ownerId === 'wolfric', 'Cumberland owner must be wolfric');
 
 console.log('✅ ALL SPRINT 1 ARCHITECTURE AND GAMESTATE TESTS PASSED!');

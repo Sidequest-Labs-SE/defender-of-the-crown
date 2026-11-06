@@ -286,6 +286,9 @@ export class CombatResolver {
         defender.isDefeated = true;
         defender.campaignArmy = { soldiers: 0, knights: 0, catapults: 0 };
         eliminatedLordId = defender.id;
+        if (state.captiveDamsel?.captorLordId === defender.id) {
+          state.captiveDamsel = null;
+        }
 
         // Revert all other territories owned by the defeated lord to Neutral
         for (const otherTerr of Object.values(state.territories)) {

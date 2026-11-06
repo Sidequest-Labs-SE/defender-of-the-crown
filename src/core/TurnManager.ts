@@ -1,11 +1,22 @@
 import { GameState } from './GameState';
 import { CombatResolver } from './CombatResolver';
-import { Lord, MONTH_NAMES, TurnSummary, UNIT_COSTS } from './types';
+import { SAXON_DAMSELS } from '../data/damsels';
+import {
+  AiTurnQueueState,
+  InteractiveTurnResult,
+  Lord,
+  MONTH_NAMES,
+  MoveResult,
+  TurnSummary,
+  UNIT_COSTS,
+} from './types';
 
 /**
  * TurnManager
  * Orchestrates AI Lord decision-making, calendar progression (1149 -> 1150+),
  * monthly tax collection, and Chronicle logging.
+ * Supports both synchronous headless execution (endTurn) and interactive pause/resume
+ * when an AI Lord attacks a defended Player territory (beginInteractiveTurn / continueInteractiveTurn).
  */
 export class TurnManager {
   private gameState: GameState;
@@ -15,7 +26,103 @@ export class TurnManager {
   }
 
   /**
-   * Executes a complete monthly turn cycle:
+   * Starts an interactive monthly turn from MapScene.
+   * Pauses and returns PAUSED_FOR_PLAYER_DEFENSE if an AI Lord invades a defended Player territory;
+   * otherwise completes all AI turns, advances the calendar, and collects monthly taxes.
+   */
+  public beginInteractiveTurn(): InteractiveTurnResult {
+    const preState = this.gameState.getState();
+
+    if (preState.victoryStatus !== 'ONGOING') {
+      return {
+        status: 'TURN_COMPLETE',
+        summary: {
+          year: preState.year,
+          month: preState.month,
+          turn: preState.turn,
+          events: ['Campaign has already concluded.'],
+          taxesCollected: {},
+          victoryStatus: preState.victoryStatus,
+        },
+      };
+    }
+
+    const aiLordIds = Object.keys(preState.activeLords).filter(
+      (id) => !preState.activeLords[id].isPlayer
+    );
+
+    const queueState: AiTurnQueueState = {
+      remainingAiLordIds: [...aiLordIds],
+      events: [],
+    };
+
+    return this.continueInteractiveTurn(queueState);
+  }
+
+  /**
+   * Continues processing a paused AI turn queue after an interactive Player defense BattleScene concludes.
+   */
+  public continueInteractiveTurn(queueState: AiTurnQueueState): InteractiveTurnResult {
+    while (queueState.remainingAiLordIds.length > 0) {
+      const currentState = this.gameState.getState();
+      if (currentState.victoryStatus !== 'ONGOING') {
+        break;
+      }
+
+      const aiId = queueState.remainingAiLordIds.shift()!;
+      const aiLord = currentState.activeLords[aiId];
+      if (!aiLord || !aiLord.isActive || aiLord.isDefeated) {
+        continue;
+      }
+
+      const moveRes = this.stepSingleAiLord(aiId, true);
+      if (!moveRes) {
+        continue;
+      }
+
+      if (moveRes.outcome === 'BATTLE_PENDING' && moveRes.pendingBattle) {
+        queueState.events.push(moveRes.message);
+        return {
+          status: 'PAUSED_FOR_PLAYER_DEFENSE',
+          pendingBattle: moveRes.pendingBattle,
+          queueState: {
+            remainingAiLordIds: [...queueState.remainingAiLordIds],
+            events: [...queueState.events],
+          },
+        };
+      }
+
+      if (moveRes.message) {
+        queueState.events.push(moveRes.message);
+      }
+    }
+
+    // Check if campaign ended during AI turns (e.g. Player Home Castle fell)
+    const postAiState = this.gameState.getState();
+    if (postAiState.victoryStatus !== 'ONGOING') {
+      return {
+        status: 'TURN_COMPLETE',
+        summary: {
+          year: postAiState.year,
+          month: postAiState.month,
+          turn: postAiState.turn,
+          events: queueState.events,
+          taxesCollected: {},
+          victoryStatus: postAiState.victoryStatus,
+        },
+      };
+    }
+
+    // Advance Calendar & Collect Monthly Taxes
+    const summary = this.finalizeCalendarAndTaxes(queueState.events);
+    return {
+      status: 'TURN_COMPLETE',
+      summary,
+    };
+  }
+
+  /**
+   * Executes a complete monthly turn cycle synchronously (headless / AI-vs-AI auto-resolve):
    * 1. Sequential AI turns (recruitment + movement/combat) for all active AI lords
    * 2. Calendar advancement (month 1..12, year rollover)
    * 3. Tax collection for all active undefeated lords
@@ -71,6 +178,10 @@ export class TurnManager {
       };
     }
 
+    return this.finalizeCalendarAndTaxes(turnEvents);
+  }
+
+  private finalizeCalendarAndTaxes(turnEvents: string[]): TurnSummary {
     // 2. Advance Calendar (month 1..12, year 1149 -> 1150+, turn++)
     const calendar = this.gameState.advanceCalendar();
     const monthName = MONTH_NAMES[(calendar.month - 1) % 12];
@@ -85,6 +196,33 @@ export class TurnManager {
     this.gameState.addLog(taxMsg);
     turnEvents.push(taxMsg);
 
+    // 5. Periodic Captured Saxon Damsel Campaign Event (Turns 3, 6, 9, 12...)
+    const latestState = this.gameState.getState();
+    if (
+      latestState.victoryStatus === 'ONGOING' &&
+      calendar.turn % 3 === 0 &&
+      !latestState.captiveDamsel
+    ) {
+      const ev = this.gameState.triggerDamselCaptureEvent();
+      if (ev) {
+        const lady = SAXON_DAMSELS[ev.damselId];
+        const captor = latestState.activeLords[ev.captorLordId];
+        const terr = latestState.territories[ev.castleTerritoryId];
+        turnEvents.push(
+          `[DAMSEL IN DISTRESS] ${lady.name} is held captive by ${
+            captor?.name ?? 'a Norman Baron'
+          } in ${terr?.name ?? 'the keep'}!`
+        );
+      }
+    }
+
+    // 6. Periodic Royal Tournament Announcement (Turns 4, 8, 12...)
+    if (latestState.victoryStatus === 'ONGOING' && calendar.turn % 4 === 0) {
+      const tournMsg = `[ROYAL TOURNAMENT] The King's Marshal proclaims a Grand Tournament! Champions may tilt for Fame & Land!`;
+      this.gameState.addLog(tournMsg);
+      turnEvents.push(tournMsg);
+    }
+
     return {
       year: calendar.year,
       month: calendar.month,
@@ -96,9 +234,20 @@ export class TurnManager {
   }
 
   /**
-   * Executes recruitment and tactical movement for a single AI Lord.
+   * Executes recruitment and tactical movement for a single AI Lord (auto-resolving battles).
    */
   public executeAiLordTurn(lordId: string): string | null {
+    const res = this.stepSingleAiLord(lordId, false);
+    if (!res || res.outcome === 'RELOCATED') {
+      return null;
+    }
+    return res.message;
+  }
+
+  /**
+   * Shared AI recruitment + movement decision step.
+   */
+  private stepSingleAiLord(lordId: string, interactiveBattle: boolean): MoveResult | null {
     const stateBefore = this.gameState.getState();
     const lord = stateBefore.activeLords[lordId];
     if (!lord || !lord.isActive || lord.isDefeated) {
@@ -151,8 +300,9 @@ export class TurnManager {
     );
 
     if (vulnerableHomeCastle) {
-      const moveRes = this.gameState.moveCampaignArmy(lordId, vulnerableHomeCastle.tid);
-      return moveRes.message;
+      return this.gameState.moveCampaignArmy(lordId, vulnerableHomeCastle.tid, {
+        interactiveBattle,
+      });
     }
 
     // 2. Claim highest-value adjacent Neutral territory
@@ -166,8 +316,9 @@ export class TurnManager {
         return tb.neighbors.length - ta.neighbors.length;
       });
 
-      const moveRes = this.gameState.moveCampaignArmy(lordId, sortedNeutrals[0]);
-      return moveRes.message;
+      return this.gameState.moveCampaignArmy(lordId, sortedNeutrals[0], {
+        interactiveBattle,
+      });
     }
 
     // 3. Attack weakest / highest-value enemy territory
@@ -183,8 +334,9 @@ export class TurnManager {
         return ratioB - ratioA;
       });
 
-      const moveRes = this.gameState.moveCampaignArmy(lordId, attackableEnemies[0].tid);
-      return moveRes.message;
+      return this.gameState.moveCampaignArmy(lordId, attackableEnemies[0].tid, {
+        interactiveBattle,
+      });
     }
 
     // 4. Reposition back to Home Castle if idle in interior

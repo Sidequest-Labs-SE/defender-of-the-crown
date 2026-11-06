@@ -3,18 +3,40 @@ import { GameState } from '../core/GameState';
 import { TurnManager } from '../core/TurnManager';
 import { CombatResolver } from '../core/CombatResolver';
 import {
+  AiTurnQueueState,
   CampaignState,
+  getCinemawareStatRating,
+  InteractiveTurnResult,
+  JoustStakesType,
   Lord,
   MONTH_NAMES,
+  PendingBattleContext,
+  PendingJoustContext,
+  PendingSwordplayContext,
   ROBIN_HOOD_MERRY_MEN_COUNT,
   Territory,
   UNIT_COSTS,
   UnitType,
 } from '../core/types';
+import { SAXON_DAMSELS } from '../data/damsels';
 import { PALETTE, PALETTE_HEX } from '../data/palette';
 import { PixelArtGenerator } from '../utils/PixelArtGenerator';
+import { AudioManager } from '../utils/AudioManager';
 
-type RightPanelMode = 'DOSSIER' | 'RECRUIT' | 'ROBIN_HOOD' | 'CHRONICLE';
+export interface MapSceneInitData {
+  resumeAiQueue?: AiTurnQueueState;
+  lastBattleMessage?: string;
+  lastBattleAlert?: boolean;
+  focusTerritoryId?: string;
+}
+
+type RightPanelMode =
+  | 'DOSSIER'
+  | 'RECRUIT'
+  | 'RAID'
+  | 'ROBIN_HOOD'
+  | 'CHRONICLE'
+  | 'TOURNAMENT';
 
 interface TerritoryPolyHit {
   id: string;
@@ -33,10 +55,12 @@ export class MapScene extends Phaser.Scene {
   private hoveredTerritoryId: string | null = null;
   private isMarchMode = false;
   private panelMode: RightPanelMode = 'DOSSIER';
+  private tournamentStakes: JoustStakesType = 'FAME';
   private statusBannerMessage = 'Select a territory or issue commands to thy host.';
   private statusBannerIsAlert = false;
   private pulsePhase = 0;
   private refreshPending = false;
+  private isTransitioningToBattle = false;
 
   private territoryPolys: TerritoryPolyHit[] = [];
 
@@ -49,6 +73,7 @@ export class MapScene extends Phaser.Scene {
   private mapTooltipText!: Phaser.GameObjects.Text;
   private mapStatusBannerBg!: Phaser.GameObjects.Graphics;
   private mapStatusBannerText!: Phaser.GameObjects.Text;
+  private mapDamselAlertContainer!: Phaser.GameObjects.Container;
 
   // Right Command HUD Containers (x: 780..1280, y: 0..720)
   private topBannerContainer!: Phaser.GameObjects.Container;
@@ -62,11 +87,12 @@ export class MapScene extends Phaser.Scene {
     super({ key: 'MapScene' });
   }
 
-  create(): void {
+  create(data?: MapSceneInitData): void {
     PixelArtGenerator.generateAll(this);
 
     const gameState = GameState.getInstance();
     this.turnManager = new TurnManager(gameState);
+    this.isTransitioningToBattle = false;
 
     const initialCheck = gameState.getState();
     const playerCheck = initialCheck.activeLords[initialCheck.selectedLordId];
@@ -74,17 +100,27 @@ export class MapScene extends Phaser.Scene {
       gameState.startNewCampaign(initialCheck.selectedLordId || 'ivanhoe');
     }
 
+    const latestState = gameState.getState();
     const player = gameState.getPlayerLord();
-    this.selectedTerritoryId = player.currentTerritoryId || player.homeTerritoryId;
+    this.selectedTerritoryId =
+      data?.focusTerritoryId && latestState.territories[data.focusTerritoryId]
+        ? data.focusTerritoryId
+        : player.currentTerritoryId || player.homeTerritoryId;
     this.hoveredTerritoryId = null;
     this.isMarchMode = false;
     this.panelMode = 'DOSSIER';
-    this.statusBannerMessage = `Lord ${player.name} commands from ${
-      gameState.getTerritory(this.selectedTerritoryId)?.name ?? 'Yorkshire'
-    }.`;
-    this.statusBannerIsAlert = false;
 
-    this.buildPolygonHitRegions(gameState.getState());
+    if (data?.lastBattleMessage) {
+      this.statusBannerMessage = data.lastBattleMessage;
+      this.statusBannerIsAlert = Boolean(data.lastBattleAlert);
+    } else {
+      this.statusBannerMessage = `Lord ${player.name} commands from ${
+        gameState.getTerritory(this.selectedTerritoryId)?.name ?? 'Yorkshire'
+      }.`;
+      this.statusBannerIsAlert = false;
+    }
+
+    this.buildPolygonHitRegions(latestState);
 
     // 1. Left Zone (0..780 x 0..720): Widescreen Strategy Map of England & Wales
     this.createLeftMapZone();
@@ -113,6 +149,18 @@ export class MapScene extends Phaser.Scene {
     });
 
     this.refreshAll();
+    this.cameras.main.fadeIn(180, 0, 0, 0);
+
+    // Resume paused AI turn queue if returning from an interactive defensive BattleScene
+    if (data?.resumeAiQueue && latestState.victoryStatus === 'ONGOING') {
+      this.isTransitioningToBattle = true;
+      this.time.delayedCall(260, () => {
+        if (!this.scene || !this.scene.isActive()) return;
+        this.isTransitioningToBattle = false;
+        const stepRes = this.turnManager.continueInteractiveTurn(data.resumeAiQueue!);
+        this.processInteractiveTurnResult(stepRes);
+      });
+    }
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.unsubscribeState) {
@@ -209,6 +257,9 @@ export class MapScene extends Phaser.Scene {
         resolution: TEXT_RES,
       })
       .setOrigin(0.5);
+
+    // Urgent Damsel in Distress Alert Card (Open Sea x: 14..238, y: 112..210)
+    this.mapDamselAlertContainer = this.add.container(0, 0).setDepth(40);
   }
 
   private createRightHudChrome(): void {
@@ -256,7 +307,7 @@ export class MapScene extends Phaser.Scene {
     });
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.x >= 780) return;
+      if (pointer.x >= 780 || this.isTransitioningToBattle) return;
 
       const gameState = GameState.getInstance();
       const state = gameState.getState();
@@ -283,6 +334,13 @@ export class MapScene extends Phaser.Scene {
           this.setStatusMessage('Returned to Territory Dossier.', false);
           this.scheduleRefresh();
         }
+      });
+      this.input.keyboard.on('keydown-S', () => {
+        this.handleSaveCampaign();
+      });
+      this.input.keyboard.on('keydown-M', () => {
+        const muted = AudioManager.getInstance().toggleMute();
+        this.setStatusMessage(`Audio sound effects ${muted ? 'MUTED' : 'UNMUTED'}.`, false);
       });
     }
   }
@@ -333,7 +391,24 @@ export class MapScene extends Phaser.Scene {
         return;
       }
 
-      const moveResult = gameState.moveCampaignArmy(player.id, territoryId);
+      const moveResult = gameState.moveCampaignArmy(player.id, territoryId, {
+        interactiveBattle: true,
+      });
+
+      if (moveResult.outcome === 'BATTLE_PENDING' && moveResult.pendingBattle) {
+        this.isMarchMode = false;
+        this.selectedTerritoryId = territoryId;
+        this.setStatusMessage(
+          moveResult.pendingBattle.hasCastle
+            ? `🏰 Laying siege to ${territory.name}!`
+            : `⚔ Marching to battle in ${territory.name}!`,
+          false
+        );
+        this.scheduleRefresh();
+        this.launchBattleScene(moveResult.pendingBattle);
+        return;
+      }
+
       if (moveResult.success) {
         this.selectedTerritoryId = territoryId;
         this.isMarchMode = false;
@@ -379,6 +454,7 @@ export class MapScene extends Phaser.Scene {
     this.renderMapMarkers(state);
     this.renderMapHighlights();
     this.renderStatusAndTooltipBanners(state);
+    this.renderDamselAlertBanner(state);
     this.renderTopHudBanner(state);
     this.renderDynamicRightPanel(state);
     this.renderCommandButtons(state);
@@ -565,6 +641,22 @@ export class MapScene extends Phaser.Scene {
           .image(castleX, castleY, isHome ? 'icon_home_castle' : 'icon_castle')
           .setDisplaySize(isHome ? 34 : 28, isHome ? 36 : 28);
         this.mapMarkersContainer.add(castleImg);
+
+        // Captive Saxon Damsel Pin on Captor's Stronghold
+        if (state.captiveDamsel?.castleTerritoryId === terr.id) {
+          const capTag = this.add
+            .text(cx, cy - 28, '👸 CAPTIVE!', {
+              fontFamily: FONT_BODY,
+              fontSize: '9.5px',
+              fontStyle: 'bold',
+              color: PALETTE_HEX.GOLD_BRIGHT,
+              backgroundColor: '#8B1414EE',
+              padding: { x: 4, y: 1.5 },
+              resolution: TEXT_RES,
+            })
+            .setOrigin(0.5);
+          this.mapMarkersContainer.add(capTag);
+        }
       }
 
       // 3. Heraldic Shield / Campaign Army Pawns
@@ -728,6 +820,81 @@ export class MapScene extends Phaser.Scene {
     this.renderMapTooltip(state);
   }
 
+  private renderDamselAlertBanner(state: CampaignState): void {
+    this.mapDamselAlertContainer.removeAll(true);
+    if (state.victoryStatus !== 'ONGOING' || !state.captiveDamsel) {
+      this.mapDamselAlertContainer.setVisible(false);
+      return;
+    }
+
+    this.mapDamselAlertContainer.setVisible(true);
+    const ev = state.captiveDamsel;
+    const lady = SAXON_DAMSELS[ev.damselId];
+    const terr = state.territories[ev.castleTerritoryId];
+
+    // Urgent Alert Card in Open Irish Sea (x: 14..234, y: 112..210 — clears all shires!)
+    const x = 14;
+    const y = 112;
+    const w = 220;
+    const h = 98;
+
+    const card = this.add.graphics();
+    const drawCard = (hover: boolean) => {
+      card.clear();
+      card.fillStyle(hover ? 0x8b1c1c : 0x6e1414, 0.96);
+      card.fillRoundedRect(x, y, w, h, 6);
+      card.lineStyle(2, PALETTE.GOLD_BRIGHT, 1);
+      card.strokeRoundedRect(x, y, w, h, 6);
+    };
+    drawCard(false);
+    this.mapDamselAlertContainer.add(card);
+
+    const portrait = this.add
+      .image(x + 30, y + 36, `portrait_${lady.id}`)
+      .setDisplaySize(42, 42);
+
+    const hdr = this.add.text(x + 58, y + 12, 'DAMSEL IN DISTRESS!', {
+      fontFamily: FONT_BODY,
+      fontSize: '11px',
+      fontStyle: 'bold',
+      color: PALETTE_HEX.GOLD_BRIGHT,
+      resolution: TEXT_RES,
+    });
+
+    const sub = this.add.text(
+      x + 58,
+      y + 29,
+      `${lady.name}\nHeld in ${terr?.name ?? 'Keep'}`,
+      {
+        fontFamily: FONT_BODY,
+        fontSize: '11px',
+        fontStyle: '600',
+        color: PALETTE_HEX.PARCHMENT_LIGHT,
+        lineSpacing: 2,
+        resolution: TEXT_RES,
+      }
+    );
+
+    const cta = this.add
+      .text(x + w / 2, y + 81, '⚔  CLICK TO RESCUE  ⚔', {
+        fontFamily: FONT_BODY,
+        fontSize: '11px',
+        fontStyle: 'bold',
+        color: '#FFF3B0',
+        resolution: TEXT_RES,
+      })
+      .setOrigin(0.5);
+
+    const zone = this.add
+      .zone(x + w / 2, y + h / 2, w, h)
+      .setInteractive({ useHandCursor: true });
+    zone.on('pointerover', () => drawCard(true));
+    zone.on('pointerout', () => drawCard(false));
+    zone.on('pointerdown', () => this.handleLaunchDamselRescue());
+
+    this.mapDamselAlertContainer.add([portrait, hdr, sub, cta, zone]);
+  }
+
   private renderMapTooltip(providedState?: CampaignState): void {
     const gameState = GameState.getInstance();
     const state = providedState ?? gameState.getState();
@@ -790,8 +957,11 @@ export class MapScene extends Phaser.Scene {
           this.mapTooltipText.setColor(PALETTE_HEX.GOLD_BRIGHT);
           return;
         }
+        const modeLabel = terr.hasCastle
+          ? '🏰 BESIEGE ' + terr.name.toUpperCase() + ' [CATAPULT SIEGE]'
+          : '⚔ INVADE ' + terr.name.toUpperCase() + ' (TACTICAL BATTLE)';
         this.mapTooltipText.setText(
-          `INVADE ${terr.name.toUpperCase()}  •  Your Strength: ${preview.attackerStrength}  vs  Defender: ${preview.defenderStrength}`
+          `${modeLabel}  •  Your Strength: ${preview.attackerStrength}  vs  Defender: ${preview.defenderStrength}`
         );
         this.mapTooltipText.setColor(
           preview.attackerStrength > preview.defenderStrength
@@ -899,14 +1069,26 @@ export class MapScene extends Phaser.Scene {
       }
     );
 
+    const spouseTag =
+      state.rescuedDamselIds.length > 0
+        ? `  •  ♥ ${SAXON_DAMSELS[state.rescuedDamselIds[0]].name}${
+            state.rescuedDamselIds.length > 1
+              ? ` (+${state.rescuedDamselIds.length - 1})`
+              : ''
+          }`
+        : '';
+
     const locTxt = this.add.text(
       940,
       99,
-      `Host Encamped: ${armyLocName}`,
+      `Host: ${armyLocName}${spouseTag}`,
       {
         fontFamily: FONT_BODY,
-        fontSize: '13px',
-        color: PALETTE_HEX.PARCHMENT_DARK,
+        fontSize: '12.5px',
+        color:
+          state.rescuedDamselIds.length > 0
+            ? PALETTE_HEX.GOLD_BRIGHT
+            : PALETTE_HEX.PARCHMENT_DARK,
         resolution: TEXT_RES,
       }
     );
@@ -957,6 +1139,10 @@ export class MapScene extends Phaser.Scene {
       this.renderTerritoryDossierPanel(state);
     } else if (this.panelMode === 'RECRUIT') {
       this.renderRecruitAndGarrisonPanel(state);
+    } else if (this.panelMode === 'RAID') {
+      this.renderRaidCastlesPanel(state);
+    } else if (this.panelMode === 'TOURNAMENT') {
+      this.renderTournamentPanel(state);
     } else if (this.panelMode === 'ROBIN_HOOD') {
       this.renderRobinHoodPanel(state);
     } else if (this.panelMode === 'CHRONICLE') {
@@ -1572,13 +1758,22 @@ export class MapScene extends Phaser.Scene {
     }
 
     const logHeader = this.add
-      .text(1030, 440, 'CHRONICLE OF ENGLAND', {
-        fontFamily: FONT_HEADING,
-        fontSize: '15px',
-        fontStyle: 'bold',
-        color: PALETTE_HEX.BLOOD_RED,
-        resolution: TEXT_RES,
-      })
+      .text(
+        1030,
+        438,
+        state.rescuedDamselIds.length > 0
+          ? `CHRONICLE  •  LADIES: ${state.rescuedDamselIds
+              .map((id) => SAXON_DAMSELS[id].name.replace('Lady ', ''))
+              .join(', ')}`
+          : 'CHRONICLE OF ENGLAND',
+        {
+          fontFamily: FONT_HEADING,
+          fontSize: '14px',
+          fontStyle: 'bold',
+          color: PALETTE_HEX.BLOOD_RED,
+          resolution: TEXT_RES,
+        }
+      )
       .setOrigin(0.5);
     this.dynamicPanelContainer.add(logHeader);
 
@@ -1614,97 +1809,487 @@ export class MapScene extends Phaser.Scene {
     );
   }
 
+  private renderRaidCastlesPanel(state: CampaignState): void {
+    const gameState = GameState.getInstance();
+    const targets = gameState.getRaidableTargets();
+    const canRaidThisTurn = !state.hasRaidedThisTurn;
+
+    const card = this.drawParchmentCard(796, 202, 468, 446);
+    card.lineBetween(818, 246, 1242, 246);
+
+    const header = this.add
+      .text(1030, 226, 'NIGHT CASTLE RAID', {
+        fontFamily: FONT_HEADING,
+        fontSize: '18.5px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.WOOD_DARK,
+        resolution: TEXT_RES,
+      })
+      .setOrigin(0.5);
+
+    const sub = this.add
+      .text(
+        1030,
+        259,
+        canRaidThisTurn
+          ? 'Infiltrate a rival stronghold by night to plunder 60% of their vault (min 8G)!'
+          : 'Thy blade rests — already conducted a Night Raid this month!',
+        {
+          fontFamily: FONT_BODY,
+          fontSize: '11.5px',
+          fontStyle: '600',
+          color: canRaidThisTurn ? PALETTE_HEX.BLOOD_RED : PALETTE_HEX.STONE_DARK,
+          resolution: TEXT_RES,
+        }
+      )
+      .setOrigin(0.5);
+
+    this.dynamicPanelContainer.add([header, sub]);
+
+    let ry = 286;
+    if (targets.length === 0) {
+      const noneTxt = this.add
+        .text(1030, 360, 'No eligible rival strongholds remain.', {
+          fontFamily: FONT_BODY,
+          fontSize: '14px',
+          color: PALETTE_HEX.STONE_DARK,
+          resolution: TEXT_RES,
+        })
+        .setOrigin(0.5);
+      this.dynamicPanelContainer.add(noneTxt);
+    } else {
+      for (const item of targets.slice(0, 5)) {
+        const shieldKey = this.textures.exists(`shield_${item.lord.id}`)
+          ? `shield_${item.lord.id}`
+          : 'shield_garrison';
+        const shield = this.add
+          .image(828, ry + 18, shieldKey)
+          .setDisplaySize(22, 28);
+
+        const rating = getCinemawareStatRating(item.lord.swordplay);
+        const nameTxt = this.add.text(
+          846,
+          ry + 2,
+          `${item.lord.name}  (${item.territoryName})`,
+          {
+            fontFamily: FONT_BODY,
+            fontSize: '13px',
+            fontStyle: 'bold',
+            color:
+              item.lord.faction === 'norman'
+                ? PALETTE_HEX.BLOOD_RED
+                : PALETTE_HEX.FOLIAGE_DARK,
+            resolution: TEXT_RES,
+          }
+        );
+
+        const infoTxt = this.add.text(
+          846,
+          ry + 20,
+          `Vault: ${item.lord.gold}G (Loot: +${item.estimatedLoot}G) • Sword: ${item.lord.swordplay} (${rating})`,
+          {
+            fontFamily: FONT_BODY,
+            fontSize: '11.5px',
+            color: '#2B221A',
+            resolution: TEXT_RES,
+          }
+        );
+
+        this.dynamicPanelContainer.add([shield, nameTxt, infoTxt]);
+
+        this.addMiniButton(
+          this.dynamicPanelContainer,
+          1158,
+          ry + 4,
+          84,
+          30,
+          '🗡 RAID',
+          canRaidThisTurn,
+          () => this.handleLaunchRaid(item.lord.id)
+        );
+
+        ry += 50;
+      }
+    }
+
+    if (state.captiveDamsel) {
+      const lady = SAXON_DAMSELS[state.captiveDamsel.damselId];
+      this.addMiniButton(
+        this.dynamicPanelContainer,
+        820,
+        558,
+        420,
+        36,
+        `👸  RESCUE CAPTIVE ${lady.name.toUpperCase()}!`,
+        true,
+        () => this.handleLaunchDamselRescue()
+      );
+    }
+
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      820,
+      602,
+      420,
+      32,
+      '←  BACK TO TERRITORY DOSSIER',
+      true,
+      () => {
+        this.panelMode = 'DOSSIER';
+        this.scheduleRefresh();
+      }
+    );
+  }
+
+  private renderTournamentPanel(state: CampaignState): void {
+    const gameState = GameState.getInstance();
+    const player = gameState.getPlayerLord();
+    const canJoustThisTurn = !state.hasJoustedThisTurn;
+    const isLand = this.tournamentStakes === 'LAND';
+
+    const card = this.drawParchmentCard(796, 202, 468, 446);
+    card.lineBetween(818, 246, 1242, 246);
+
+    const header = this.add
+      .text(1030, 226, 'ROYAL JOUSTING TOURNAMENT', {
+        fontFamily: FONT_HEADING,
+        fontSize: '18px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.WOOD_DARK,
+        resolution: TEXT_RES,
+      })
+      .setOrigin(0.5);
+
+    const sub = this.add
+      .text(
+        1030,
+        259,
+        canJoustThisTurn
+          ? 'Enter the royal tilt-yard to compete for purse & honor, or wager territory!'
+          : 'Thy lance rests — already jousted in the lists this month!',
+        {
+          fontFamily: FONT_BODY,
+          fontSize: '11px',
+          fontStyle: '600',
+          color: canJoustThisTurn ? PALETTE_HEX.BLOOD_RED : PALETTE_HEX.STONE_DARK,
+          resolution: TEXT_RES,
+        }
+      )
+      .setOrigin(0.5);
+
+    this.dynamicPanelContainer.add([header, sub]);
+
+    // Stakes Toggles (y: 276, h: 28)
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      820,
+      276,
+      205,
+      28,
+      this.tournamentStakes === 'FAME' ? '🏆 STAKES: FAME (+15G)' : 'STAKES: FAME (+15G)',
+      true,
+      () => {
+        this.tournamentStakes = 'FAME';
+        this.scheduleRefresh();
+      }
+    );
+
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      1035,
+      276,
+      205,
+      28,
+      this.tournamentStakes === 'LAND' ? '🏰 STAKES: LAND' : 'STAKES: LAND',
+      true,
+      () => {
+        this.tournamentStakes = 'LAND';
+        this.scheduleRefresh();
+      }
+    );
+
+    let ry = 316;
+    if (!canJoustThisTurn) {
+      const waitTxt = this.add
+        .text(
+          1030,
+          390,
+          'The King holds jousts once per month.\nAwait the next turn to enter the Lists again!',
+          {
+            fontFamily: FONT_BODY,
+            fontSize: '14px',
+            color: PALETTE_HEX.STONE_DARK,
+            align: 'center',
+            lineSpacing: 6,
+            resolution: TEXT_RES,
+          }
+        )
+        .setOrigin(0.5);
+      this.dynamicPanelContainer.add(waitTxt);
+    } else {
+      const targets = gameState.getJoustableTargets(player.id, this.tournamentStakes);
+      if (targets.length === 0) {
+        const noneMsg = isLand
+          ? 'Cannot wager land: either thou or the rival lords\ndo not possess any non-home border territories.\nTry Jousting for Fame!'
+          : 'No eligible rival lords remain in the realm!';
+        const noneTxt = this.add
+          .text(1030, 390, noneMsg, {
+            fontFamily: FONT_BODY,
+            fontSize: '13px',
+            color: PALETTE_HEX.STONE_DARK,
+            align: 'center',
+            lineSpacing: 6,
+            resolution: TEXT_RES,
+          })
+          .setOrigin(0.5);
+        this.dynamicPanelContainer.add(noneTxt);
+      } else {
+        for (const item of targets.slice(0, 4)) {
+          const shieldKey = this.textures.exists(`shield_${item.lord.id}`)
+            ? `shield_${item.lord.id}`
+            : 'shield_garrison';
+          const shield = this.add
+            .image(828, ry + 18, shieldKey)
+            .setDisplaySize(24, 30);
+
+          const rating = getCinemawareStatRating(item.lord.jousting);
+          const nameTxt = this.add.text(
+            848,
+            ry + 2,
+            `${item.lord.name}  (${item.lord.faction.toUpperCase()})`,
+            {
+              fontFamily: FONT_BODY,
+              fontSize: '13px',
+              fontStyle: 'bold',
+              color:
+                item.lord.faction === 'norman'
+                  ? PALETTE_HEX.BLOOD_RED
+                  : PALETTE_HEX.FOLIAGE_DARK,
+              resolution: TEXT_RES,
+            }
+          );
+
+          const desc =
+            isLand && item.wagerTerritoryId
+              ? `Wager Shire: ${
+                  gameState.getTerritory(item.wagerTerritoryId)?.name || 'Border'
+                } • Joust: ${item.lord.jousting} (${rating})`
+              : `Purse: +15 Gold • Jousting Mastery: ${item.lord.jousting} (${rating})`;
+
+          const infoTxt = this.add.text(848, ry + 20, desc, {
+            fontFamily: FONT_BODY,
+            fontSize: '11.5px',
+            color: '#2B221A',
+            resolution: TEXT_RES,
+          });
+
+          this.dynamicPanelContainer.add([shield, nameTxt, infoTxt]);
+
+          this.addMiniButton(
+            this.dynamicPanelContainer,
+            1150,
+            ry + 6,
+            92,
+            30,
+            isLand ? '🏰 WAGER' : '🏇 TILT',
+            canJoustThisTurn,
+            () =>
+              this.handleLaunchJoust(
+                item.lord.id,
+                this.tournamentStakes,
+                item.wagerTerritoryId
+              )
+          );
+
+          ry += 52;
+        }
+      }
+    }
+
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      820,
+      602,
+      420,
+      32,
+      '←  BACK TO TERRITORY DOSSIER',
+      true,
+      () => {
+        this.panelMode = 'DOSSIER';
+        this.scheduleRefresh();
+      }
+    );
+  }
+
   private renderCommandButtons(state: CampaignState): void {
     this.commandButtonsContainer.removeAll(true);
     const isOngoing = state.victoryStatus === 'ONGOING';
 
     if (this.panelMode === 'DOSSIER') {
-      const buttons: Array<{
-        label: string;
-        y: number;
-        h: number;
-        accent?: boolean;
-        activeHighlight?: boolean;
-        onClick: () => void;
-      }> = [
-        {
-          label: '⚔   RECRUIT & GARRISON',
-          y: 476,
-          h: 40,
-          onClick: () => {
-            this.isMarchMode = false;
-            this.panelMode = 'RECRUIT';
-            this.scheduleRefresh();
-          },
-        },
-        {
-          label: this.isMarchMode
-            ? '✕   CANCEL MARCH  [ESC]'
-            : '➔   MARCH / ATTACK',
-          y: 522,
-          h: 40,
-          activeHighlight: this.isMarchMode,
-          onClick: () => {
-            this.isMarchMode = !this.isMarchMode;
-            if (this.isMarchMode) {
-              this.setStatusMessage(
-                'MARCH MODE: Click a highlighted territory on the map!',
-                false
-              );
-            } else {
-              this.setStatusMessage('March cancelled.', false);
-            }
-            this.scheduleRefresh();
-          },
-        },
-        {
-          label: `🏹   ROBIN HOOD  (Uses: ${state.robinHoodUsesLeft}/3)`,
-          y: 568,
-          h: 40,
-          onClick: () => {
-            this.isMarchMode = false;
-            this.panelMode = 'ROBIN_HOOD';
-            this.scheduleRefresh();
-          },
-        },
-        {
-          label: '📜   CHRONICLE / LORDS',
-          y: 614,
-          h: 40,
-          onClick: () => {
-            this.isMarchMode = false;
-            this.panelMode = 'CHRONICLE';
-            this.scheduleRefresh();
-          },
-        },
-        {
-          label: '⏳   END TURN  (NEXT MONTH)',
-          y: 660,
-          h: 46,
-          accent: true,
-          onClick: () => this.handleEndTurn(),
-        },
-      ];
+      // Row 1 (y: 474, h: 38): RECRUIT & GARRISON | MARCH / ATTACK
+      this.addHudCommandButton(
+        796,
+        474,
+        229,
+        38,
+        '⚔  RECRUIT & GARRISON',
+        isOngoing,
+        false,
+        false,
+        () => {
+          this.isMarchMode = false;
+          this.panelMode = 'RECRUIT';
+          this.scheduleRefresh();
+        }
+      );
 
-      for (const b of buttons) {
+      this.addHudCommandButton(
+        1035,
+        474,
+        229,
+        38,
+        this.isMarchMode ? '✕  CANCEL MARCH [ESC]' : '➔  MARCH / ATTACK',
+        isOngoing,
+        false,
+        this.isMarchMode,
+        () => {
+          this.isMarchMode = !this.isMarchMode;
+          if (this.isMarchMode) {
+            this.setStatusMessage(
+              'MARCH MODE: Click a highlighted territory on the map!',
+              false
+            );
+          } else {
+            this.setStatusMessage('March cancelled.', false);
+          }
+          this.scheduleRefresh();
+        }
+      );
+
+      // Row 2 (y: 518, h: 38): RAID CASTLE | ROYAL TOURNAMENT
+      this.addHudCommandButton(
+        796,
+        518,
+        229,
+        38,
+        state.hasRaidedThisTurn ? '🗡  CASTLE RAIDED' : '🗡  RAID CASTLE',
+        isOngoing,
+        false,
+        false,
+        () => {
+          this.isMarchMode = false;
+          this.panelMode = 'RAID';
+          this.scheduleRefresh();
+        }
+      );
+
+      this.addHudCommandButton(
+        1035,
+        518,
+        229,
+        38,
+        state.hasJoustedThisTurn ? '🏇  LISTS CLOSED' : '🏇  TOURNAMENT',
+        isOngoing,
+        false,
+        false,
+        () => {
+          this.isMarchMode = false;
+          this.panelMode = 'TOURNAMENT';
+          this.scheduleRefresh();
+        }
+      );
+
+      // Row 3 (y: 562, h: 38): ROBIN HOOD | CHRONICLE & LORDS
+      this.addHudCommandButton(
+        796,
+        562,
+        229,
+        38,
+        `🏹  ROBIN HOOD (${state.robinHoodUsesLeft}/3)`,
+        isOngoing,
+        false,
+        false,
+        () => {
+          this.isMarchMode = false;
+          this.panelMode = 'ROBIN_HOOD';
+          this.scheduleRefresh();
+        }
+      );
+
+      this.addHudCommandButton(
+        1035,
+        562,
+        229,
+        38,
+        '📜  CHRONICLE & LORDS',
+        isOngoing,
+        false,
+        false,
+        () => {
+          this.isMarchMode = false;
+          this.panelMode = 'CHRONICLE';
+          this.scheduleRefresh();
+        }
+      );
+
+      // Row 4 (y: 606, h: 38): SAVE CAMPAIGN PROGRESS [S] (or split with Damsel Rescue)
+      if (state.captiveDamsel) {
+        const lady = SAXON_DAMSELS[state.captiveDamsel.damselId];
         this.addHudCommandButton(
           796,
-          b.y,
-          468,
-          b.h,
-          b.label,
+          606,
+          320,
+          38,
+          `👸  RESCUE ${lady.name.toUpperCase()}!`,
           isOngoing,
-          Boolean(b.accent),
-          Boolean(b.activeHighlight),
-          b.onClick
+          true,
+          true,
+          () => this.handleLaunchDamselRescue()
+        );
+
+        this.addHudCommandButton(
+          1126,
+          606,
+          138,
+          38,
+          '💾  SAVE [S]',
+          isOngoing,
+          false,
+          false,
+          () => this.handleSaveCampaign()
+        );
+      } else {
+        this.addHudCommandButton(
+          796,
+          606,
+          468,
+          38,
+          '💾  SAVE CAMPAIGN PROGRESS [S]',
+          isOngoing,
+          false,
+          false,
+          () => this.handleSaveCampaign()
         );
       }
+
+      // Bottom Row (y: 654, h: 52): END TURN
+      this.addHudCommandButton(
+        796,
+        654,
+        468,
+        52,
+        '⏳   END TURN  (NEXT MONTH)',
+        isOngoing,
+        true,
+        false,
+        () => this.handleEndTurn()
+      );
     } else {
       this.addHudCommandButton(
         796,
-        658,
+        654,
         468,
-        48,
+        52,
         '⏳   END TURN  (NEXT MONTH)',
         isOngoing,
         true,
@@ -1714,9 +2299,128 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
-  private handleEndTurn(): void {
+  private handleSaveCampaign(): void {
+    const saved = GameState.getInstance().saveToStorage();
+    if (saved) {
+      AudioManager.getInstance().playFanfare();
+      this.setStatusMessage(
+        '💾 Campaign progress successfully archived to parchment scrolls!',
+        false
+      );
+    } else {
+      this.setStatusMessage('Unable to archive campaign (storage unavailable).', true);
+    }
+  }
+
+  private handleLaunchJoust(
+    targetLordId: string,
+    stakes: JoustStakesType,
+    wagerTerritoryId?: string
+  ): void {
+    if (this.isTransitioningToBattle) return;
+    const res = GameState.getInstance().initiateJoust(
+      targetLordId,
+      stakes,
+      wagerTerritoryId
+    );
+    if (!res.success || !res.context) {
+      this.setStatusMessage(res.message, true);
+      this.scheduleRefresh();
+      return;
+    }
+
+    this.setStatusMessage(res.message, false);
+    this.launchJoustScene(res.context);
+  }
+
+  private launchJoustScene(joustContext: PendingJoustContext): void {
+    if (this.isTransitioningToBattle) return;
+    this.isTransitioningToBattle = true;
     this.isMarchMode = false;
-    const summary = this.turnManager.endTurn();
+
+    this.cameras.main.fadeOut(200, 0, 0, 0);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.scene.start('JoustScene', {
+        joustContext,
+      });
+    });
+  }
+
+  private handleLaunchRaid(targetLordId: string): void {
+    if (this.isTransitioningToBattle) return;
+    const res = GameState.getInstance().initiateCastleRaid(targetLordId);
+    if (!res.success || !res.context) {
+      this.setStatusMessage(res.message, true);
+      this.scheduleRefresh();
+      return;
+    }
+
+    this.setStatusMessage(res.message, false);
+    this.launchSwordplayScene(res.context);
+  }
+
+  private handleLaunchDamselRescue(): void {
+    if (this.isTransitioningToBattle) return;
+    const res = GameState.getInstance().initiateDamselRescue();
+    if (!res.success || !res.context) {
+      this.setStatusMessage(res.message, true);
+      this.scheduleRefresh();
+      return;
+    }
+
+    this.setStatusMessage(res.message, false);
+    this.launchSwordplayScene(res.context);
+  }
+
+  private launchSwordplayScene(swordplayContext: PendingSwordplayContext): void {
+    if (this.isTransitioningToBattle) return;
+    this.isTransitioningToBattle = true;
+    this.isMarchMode = false;
+
+    this.cameras.main.fadeOut(200, 0, 0, 0);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.scene.start('SwordplayScene', {
+        swordplayContext,
+      });
+    });
+  }
+
+  private handleEndTurn(): void {
+    if (this.isTransitioningToBattle) return;
+    this.isMarchMode = false;
+    const stepResult = this.turnManager.beginInteractiveTurn();
+    this.processInteractiveTurnResult(stepResult);
+  }
+
+  private processInteractiveTurnResult(stepResult: InteractiveTurnResult): void {
+    if (
+      stepResult.status === 'PAUSED_FOR_PLAYER_DEFENSE' &&
+      stepResult.pendingBattle
+    ) {
+      const state = GameState.getInstance().getState();
+      const invName =
+        state.activeLords[stepResult.pendingBattle.attackerId]?.name ?? 'Rival Host';
+      const terrName =
+        state.territories[stepResult.pendingBattle.territoryId]?.name ?? 'thy Shire';
+
+      this.selectedTerritoryId = stepResult.pendingBattle.territoryId;
+      this.setStatusMessage(
+        stepResult.pendingBattle.hasCastle
+          ? `🏰 ${invName} besieges ${terrName}! To the ramparts!`
+          : `⚔ ${invName} invades ${terrName}! To arms!`,
+        true
+      );
+      this.scheduleRefresh();
+      this.launchBattleScene(stepResult.pendingBattle, stepResult.queueState);
+      return;
+    }
+
+    const summary = stepResult.summary;
+    if (!summary) {
+      this.scheduleRefresh();
+      return;
+    }
+
     const monthStr = MONTH_NAMES[(summary.month - 1) % 12];
     const player = GameState.getInstance().getPlayerLord();
     const myTax = summary.taxesCollected[player.id] ?? 0;
@@ -1726,13 +2430,45 @@ export class MapScene extends Phaser.Scene {
     } else if (summary.victoryStatus === 'VICTORY') {
       this.setStatusMessage('ALL RIVALS VANQUISHED! VICTORY IS THINE!', false);
     } else {
-      this.setStatusMessage(
-        `${monthStr} ${summary.year}: AI Lords marched • Collected +${myTax}G in taxes.`,
-        false
-      );
+      const postState = GameState.getInstance().getState();
+      if (
+        postState.captiveDamsel &&
+        postState.captiveDamsel.turnCaptured === summary.turn
+      ) {
+        const lady = SAXON_DAMSELS[postState.captiveDamsel.damselId];
+        const terr =
+          postState.territories[postState.captiveDamsel.castleTerritoryId];
+        this.setStatusMessage(
+          `👸 DAMSEL IN DISTRESS! ${lady.name} held captive in ${
+            terr?.name ?? 'a Norman keep'
+          }! (+${myTax}G tax)`,
+          true
+        );
+      } else {
+        this.setStatusMessage(
+          `${monthStr} ${summary.year}: AI Lords marched • Collected +${myTax}G in taxes.`,
+          false
+        );
+      }
     }
 
     this.scheduleRefresh();
+  }
+
+  private launchBattleScene(
+    battleContext: PendingBattleContext,
+    resumeAiQueue?: AiTurnQueueState
+  ): void {
+    if (this.isTransitioningToBattle) return;
+    this.isTransitioningToBattle = true;
+    const targetScene = battleContext.hasCastle ? 'SiegeScene' : 'BattleScene';
+    this.cameras.main.fadeOut(200, 0, 0, 0);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.scene.start(targetScene, {
+        battleContext,
+        resumeAiQueue,
+      });
+    });
   }
 
   private addHudCommandButton(
@@ -1804,7 +2540,10 @@ export class MapScene extends Phaser.Scene {
             : PALETTE_HEX.PARCHMENT_LIGHT
         );
       });
-      zone.on('pointerdown', onClick);
+      zone.on('pointerdown', () => {
+        AudioManager.getInstance().playUiClick();
+        onClick();
+      });
       this.commandButtonsContainer.add(zone);
     }
   }
@@ -1861,7 +2600,10 @@ export class MapScene extends Phaser.Scene {
       zone.setInteractive({ useHandCursor: true });
       zone.on('pointerover', () => draw(true));
       zone.on('pointerout', () => draw(false));
-      zone.on('pointerdown', onClick);
+      zone.on('pointerdown', () => {
+        AudioManager.getInstance().playUiClick();
+        onClick();
+      });
       parent.add(zone);
     }
   }

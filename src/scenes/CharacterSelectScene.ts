@@ -3,16 +3,21 @@ import { GameState } from '../core/GameState';
 import { SAXON_LORDS } from '../data/lords';
 import { Lord, getCinemawareStatRating } from '../core/types';
 import { PALETTE, PALETTE_HEX } from '../data/palette';
+import { AudioManager } from '../utils/AudioManager';
 
 interface LordCardUI {
   id: string;
   container: Phaser.GameObjects.Container;
   selectionBorder: Phaser.GameObjects.Graphics;
+  hoverBorder: Phaser.GameObjects.Graphics;
+  hitRect: Phaser.GameObjects.Rectangle;
 }
 
 export class CharacterSelectScene extends Phaser.Scene {
   private selectedLordId = 'ivanhoe';
   private lordCards: LordCardUI[] = [];
+  private lastClickTime = 0;
+  private isStarting = false;
 
   private detailPanelContainer!: Phaser.GameObjects.Container;
   private lordNameText!: Phaser.GameObjects.Text;
@@ -35,13 +40,15 @@ export class CharacterSelectScene extends Phaser.Scene {
   create(): void {
     GameState.getInstance().setPhase('SELECT_CHARACTER');
     this.lordCards = [];
+    this.isStarting = false;
 
     this.createBackground();
     this.createHeader();
     this.createLordCards();
     this.createDetailPanel();
     this.createConfirmButton();
-    this.selectLord('ivanhoe');
+    this.createKeyboardShortcuts();
+    this.selectLord('ivanhoe', false);
   }
 
   private createBackground(): void {
@@ -90,6 +97,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     lords.forEach((lord, index) => {
       const cx = startX + index * spacingX;
       const container = this.add.container(cx, cardY);
+      container.setDepth(5);
 
       const bg = this.add.graphics();
       bg.fillStyle(PALETTE.BLACK, 0.5);
@@ -127,6 +135,20 @@ export class CharacterSelectScene extends Phaser.Scene {
         .setOrigin(0.5);
       container.add(nameText);
 
+      // Subtle hover border indicator
+      const hoverBorder = this.add.graphics();
+      hoverBorder.lineStyle(2.5, PALETTE.GOLD_DARK, 0.9);
+      hoverBorder.strokeRoundedRect(
+        -cardWidth / 2 - 1,
+        -cardHeight / 2 - 1,
+        cardWidth + 2,
+        cardHeight + 2,
+        7
+      );
+      hoverBorder.setVisible(false);
+      container.add(hoverBorder);
+
+      // Golden highlight border for active selection
       const selectionBorder = this.add.graphics();
       selectionBorder.lineStyle(4, PALETTE.GOLD_BRIGHT, 1);
       selectionBorder.strokeRoundedRect(
@@ -139,33 +161,36 @@ export class CharacterSelectScene extends Phaser.Scene {
       selectionBorder.setVisible(false);
       container.add(selectionBorder);
 
-      const hitZone = this.add.zone(0, 0, cardWidth + 10, cardHeight + 10);
-      hitZone.setInteractive({ useHandCursor: true });
+      // Dedicated Top-Level Hit Rectangle for full card clickability
+      const hitRect = this.add.rectangle(cx, cardY, cardWidth, cardHeight, 0x000000, 0);
+      hitRect.setDepth(100);
+      hitRect.setInteractive({ useHandCursor: true });
 
-      hitZone.on('pointerover', () => {
-        if (this.selectedLordId !== lord.id) {
-          bg.lineStyle(2.5, PALETTE.GOLD_DARK, 1);
-          bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 6);
-        }
-      });
-
-      hitZone.on('pointerout', () => {
-        if (this.selectedLordId !== lord.id) {
-          bg.lineStyle(2, PALETTE.WOOD_MID, 1);
-          bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 6);
-        }
-      });
-
-      hitZone.on('pointerdown', () => {
+      hitRect.on('pointerdown', () => {
         this.selectLord(lord.id);
       });
 
-      this.lordCards.push({ id: lord.id, container, selectionBorder });
+      hitRect.on('pointerup', () => {
+        this.selectLord(lord.id);
+      });
+
+      hitRect.on('pointerover', () => {
+        if (this.selectedLordId !== lord.id) {
+          hoverBorder.setVisible(true);
+        }
+      });
+
+      hitRect.on('pointerout', () => {
+        hoverBorder.setVisible(false);
+      });
+
+      this.lordCards.push({ id: lord.id, container, selectionBorder, hoverBorder, hitRect });
     });
   }
 
   private createDetailPanel(): void {
     this.detailPanelContainer = this.add.container(640, 456);
+    this.detailPanelContainer.setDepth(5);
 
     const w = 1160;
     const h = 236;
@@ -297,6 +322,7 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private createConfirmButton(): void {
     this.confirmBtnContainer = this.add.container(640, 646);
+    this.confirmBtnContainer.setDepth(5);
 
     const btnWidth = 540;
     const btnHeight = 56;
@@ -346,12 +372,60 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.confirmBtnContainer.add(hitZone);
   }
 
-  public selectLord(lordId: string): void {
-    this.selectedLordId = lordId;
+  private createKeyboardShortcuts(): void {
+    if (!this.input.keyboard) return;
+
+    const lordIds = ['ivanhoe', 'cedric', 'geoffrey', 'wolfric'];
+
+    const selectByIndex = (index: number) => {
+      if (index >= 0 && index < lordIds.length) {
+        this.selectLord(lordIds[index]);
+      }
+    };
+
+    const cycleLord = (delta: number) => {
+      const currentIndex = lordIds.indexOf(this.selectedLordId);
+      const newIndex = (currentIndex + delta + lordIds.length) % lordIds.length;
+      this.selectLord(lordIds[newIndex]);
+    };
+
+    this.input.keyboard.on('keydown-ONE', () => selectByIndex(0));
+    this.input.keyboard.on('keydown-TWO', () => selectByIndex(1));
+    this.input.keyboard.on('keydown-THREE', () => selectByIndex(2));
+    this.input.keyboard.on('keydown-FOUR', () => selectByIndex(3));
+
+    this.input.keyboard.on('keydown-NUMPAD_ONE', () => selectByIndex(0));
+    this.input.keyboard.on('keydown-NUMPAD_TWO', () => selectByIndex(1));
+    this.input.keyboard.on('keydown-NUMPAD_THREE', () => selectByIndex(2));
+    this.input.keyboard.on('keydown-NUMPAD_FOUR', () => selectByIndex(3));
+
+    this.input.keyboard.on('keydown-LEFT', () => cycleLord(-1));
+    this.input.keyboard.on('keydown-RIGHT', () => cycleLord(1));
+
+    this.input.keyboard.on('keydown-ENTER', () => this.startCampaign());
+    this.input.keyboard.on('keydown-SPACE', () => this.startCampaign());
+  }
+
+  public selectLord(lordId: string, playSound = true): void {
     const lord: Lord = SAXON_LORDS[lordId];
+    if (!lord) return;
+
+    this.selectedLordId = lordId;
+
+    if (playSound) {
+      const now = Date.now();
+      if (now - this.lastClickTime > 80) {
+        this.lastClickTime = now;
+        AudioManager.playUiClick();
+      }
+    }
 
     for (const card of this.lordCards) {
-      card.selectionBorder.setVisible(card.id === lordId);
+      const isSelected = card.id === lordId;
+      card.selectionBorder.setVisible(isSelected);
+      if (isSelected) {
+        card.hoverBorder.setVisible(false);
+      }
     }
 
     this.lordNameText.setText(lord.name.toUpperCase());
@@ -379,6 +453,10 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   private startCampaign(): void {
+    if (this.isStarting) return;
+    this.isStarting = true;
+
+    AudioManager.playUiClick();
     GameState.getInstance().startNewCampaign(this.selectedLordId);
 
     this.cameras.main.fadeOut(300, 0, 0, 0);
