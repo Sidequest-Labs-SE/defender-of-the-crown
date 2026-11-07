@@ -3147,30 +3147,38 @@ export class PixelArtGenerator {
    * Initializes all procedural art textures at boot time.
    */
   public static generateAll(scene: Phaser.Scene): void {
-    this.createTitleBackdrop(scene);
-    this.createBritainMapBackdrop(scene);
-    this.createMapIcons(scene);
-    this.createLordPortraits(scene);
-    this.createDamselPortraits(scene);
-    this.createBattleBackdrops(scene);
-    this.createBattleUnitSprites(scene);
-    this.createSiegeSkyAndHillsBackdrop(scene);
-    this.createSiegeSprites(scene);
-    this.createSwordplayCastleBackdrop(scene);
-    this.createSwordplaySprites(scene);
-    this.createJoustArenaBackdrop(scene);
-    this.createJoustSprites(scene);
+    if (scene.textures.exists('title_backdrop')) {
+      return;
+    }
 
-    // Saxon Lord Shields
-    this.createHeraldicShield(scene, 'shield_ivanhoe', PALETTE.BLOOD_RED, PALETTE.GOLD_BRIGHT, PALETTE.PARCHMENT_LIGHT, 'cross');
-    this.createHeraldicShield(scene, 'shield_cedric', PALETTE.FOLIAGE_MID, PALETTE.GOLD_BRIGHT, PALETTE.WOOD_DARK, 'boar');
-    this.createHeraldicShield(scene, 'shield_geoffrey', PALETTE.ROYAL_BLUE, PALETTE.STONE_LIGHT, PALETTE.GOLD_DARK, 'sword');
-    this.createHeraldicShield(scene, 'shield_wolfric', PALETTE.WOOD_MID, PALETTE.PARCHMENT_LIGHT, PALETTE.STONE_DARK, 'wolf');
+    try {
+      this.createTitleBackdrop(scene);
+      this.createBritainMapBackdrop(scene);
+      this.createMapIcons(scene);
+      this.createLordPortraits(scene);
+      this.createDamselPortraits(scene);
+      this.createBattleBackdrops(scene);
+      this.createBattleUnitSprites(scene);
+      this.createSiegeSkyAndHillsBackdrop(scene);
+      this.createSiegeSprites(scene);
+      this.createSwordplayCastleBackdrop(scene);
+      this.createSwordplaySprites(scene);
+      this.createJoustArenaBackdrop(scene);
+      this.createJoustSprites(scene);
 
-    // Norman Lord Shields & Garrison Fallback Shield
-    this.createHeraldicShield(scene, 'shield_malvoisin', PALETTE.STONE_DARK, PALETTE.BLOOD_RED, PALETTE.GOLD_DARK, 'falcon');
-    this.createHeraldicShield(scene, 'shield_frontdeboeuf', PALETTE.BLACK, PALETTE.GOLD_DARK, PALETTE.BLOOD_RED, 'axe');
-    this.createHeraldicShield(scene, 'shield_boisguilbert', PALETTE.STONE_LIGHT, PALETTE.BLOOD_RED, PALETTE.BLACK, 'lion');
-    this.createHeraldicShield(scene, 'shield_garrison', PALETTE.STONE_MID, PALETTE.WOOD_DARK, PALETTE.STONE_LIGHT, 'sword');
+      // Saxon Lord Shields
+      this.createHeraldicShield(scene, 'shield_ivanhoe', PALETTE.BLOOD_RED, PALETTE.GOLD_BRIGHT, PALETTE.PARCHMENT_LIGHT, 'cross');
+      this.createHeraldicShield(scene, 'shield_cedric', PALETTE.FOLIAGE_MID, PALETTE.GOLD_BRIGHT, PALETTE.WOOD_DARK, 'boar');
+      this.createHeraldicShield(scene, 'shield_geoffrey', PALETTE.ROYAL_BLUE, PALETTE.STONE_LIGHT, PALETTE.GOLD_DARK, 'sword');
+      this.createHeraldicShield(scene, 'shield_wolfric', PALETTE.WOOD_MID, PALETTE.PARCHMENT_LIGHT, PALETTE.STONE_DARK, 'wolf');
+
+      // Norman Lord Shields & Garrison Fallback Shield
+      this.createHeraldicShield(scene, 'shield_malvoisin', PALETTE.STONE_DARK, PALETTE.BLOOD_RED, PALETTE.GOLD_DARK, 'falcon');
+      this.createHeraldicShield(scene, 'shield_frontdeboeuf', PALETTE.BLACK, PALETTE.GOLD_DARK, PALETTE.BLOOD_RED, 'axe');
+      this.createHeraldicShield(scene, 'shield_boisguilbert', PALETTE.STONE_LIGHT, PALETTE.BLOOD_RED, PALETTE.BLACK, 'lion');
+      this.createHeraldicShield(scene, 'shield_garrison', PALETTE.STONE_MID, PALETTE.WOOD_DARK, PALETTE.STONE_LIGHT, 'sword');
+    } catch (err) {
+      console.error('[PixelArtGenerator] Error during generateAll:', err);
+    }
   }
 }

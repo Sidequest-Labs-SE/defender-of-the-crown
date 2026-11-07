@@ -9,8 +9,17 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
-    PixelArtGenerator.generateAll(this);
-    SidequestArtGenerator.generateAll(this);
+    try {
+      PixelArtGenerator.generateAll(this);
+    } catch (err) {
+      console.error('[BootScene] Error in PixelArtGenerator.generateAll:', err);
+    }
+
+    try {
+      SidequestArtGenerator.generateAll(this);
+    } catch (err) {
+      console.error('[BootScene] Error in SidequestArtGenerator.generateAll:', err);
+    }
   }
 
   create(): void {
@@ -39,13 +48,27 @@ export class BootScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+    let started = false;
+    const startTitle = () => {
+      if (started) return;
+      started = true;
+      try {
+        title.destroy();
+        subtitle.destroy();
+      } catch {}
+      this.scene.start('TitleScene');
+    };
+
     this.time.delayedCall(300, () => {
       this.cameras.main.fadeOut(200, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-        title.destroy();
-        subtitle.destroy();
-        this.scene.start('TitleScene');
+        startTitle();
       });
+    });
+
+    // Safety fallback: if fade event stalls or is throttled in background tab
+    this.time.delayedCall(800, () => {
+      startTitle();
     });
   }
 }

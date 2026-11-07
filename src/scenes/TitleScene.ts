@@ -58,8 +58,19 @@ export class TitleScene extends Phaser.Scene {
 
   create(): void {
     this.isTransitioning = false;
-    PixelArtGenerator.generateAll(this);
-    SidequestArtGenerator.generateAll(this);
+    this.cameras.main.fadeIn(200, 0, 0, 0);
+
+    try {
+      PixelArtGenerator.generateAll(this);
+    } catch (err) {
+      console.error('[TitleScene] Error in PixelArtGenerator.generateAll:', err);
+    }
+
+    try {
+      SidequestArtGenerator.generateAll(this);
+    } catch (err) {
+      console.error('[TitleScene] Error in SidequestArtGenerator.generateAll:', err);
+    }
 
     const gs = GameState.getInstance();
     gs.setPhase('TITLE');

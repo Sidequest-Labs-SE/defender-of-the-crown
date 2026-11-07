@@ -17,18 +17,28 @@ export class SidequestArtGenerator {
       return;
     }
 
-    this.generateTitleBackdrop(scene);
-    this.generateLordPortraits(scene);
-    this.generateDamselPortraits(scene);
-    this.generateHeraldryShields(scene);
-    this.generateMapSeasonalAssets(scene);
-    this.generateBattleSeasonalAssets(scene);
-    this.generateSiegeAssets(scene);
-    this.generateSwordplayAssets(scene);
-    this.generateJoustAssets(scene);
-    this.generateNavalAssets(scene);
-    this.generateArcheryAssets(scene);
-    this.generateRelicAssets(scene);
+    const steps: Array<[string, () => void]> = [
+      ['generateTitleBackdrop', () => this.generateTitleBackdrop(scene)],
+      ['generateLordPortraits', () => this.generateLordPortraits(scene)],
+      ['generateDamselPortraits', () => this.generateDamselPortraits(scene)],
+      ['generateHeraldryShields', () => this.generateHeraldryShields(scene)],
+      ['generateMapSeasonalAssets', () => this.generateMapSeasonalAssets(scene)],
+      ['generateBattleSeasonalAssets', () => this.generateBattleSeasonalAssets(scene)],
+      ['generateSiegeAssets', () => this.generateSiegeAssets(scene)],
+      ['generateSwordplayAssets', () => this.generateSwordplayAssets(scene)],
+      ['generateJoustAssets', () => this.generateJoustAssets(scene)],
+      ['generateNavalAssets', () => this.generateNavalAssets(scene)],
+      ['generateArcheryAssets', () => this.generateArcheryAssets(scene)],
+      ['generateRelicAssets', () => this.generateRelicAssets(scene)],
+    ];
+
+    for (const [name, fn] of steps) {
+      try {
+        fn();
+      } catch (err) {
+        console.error(`[SidequestArtGenerator] Error in ${name}:`, err);
+      }
+    }
   }
 
   /**
@@ -585,7 +595,7 @@ export class SidequestArtGenerator {
       );
       this.drawLordBust96(
         ctx,
-        ALL_LORDS.reginald,
+        ALL_LORDS.frontdeboeuf ?? ALL_LORDS.ivanhoe,
         {
           hair: '#3A3432',
           hairLight: '#625854',
@@ -718,7 +728,7 @@ export class SidequestArtGenerator {
     ctx.fillRect(37, 37, 7, 4);
     ctx.fillRect(52, 37, 7, 4);
     const irisColor =
-      lord.faction === 'saxon'
+      (lord?.faction ?? 'saxon') === 'saxon'
         ? SIDEQUEST_PALETTE_HEX.AZURE_MID
         : SIDEQUEST_PALETTE_HEX.SHADOW_ABYSS;
     ctx.fillStyle = irisColor;
