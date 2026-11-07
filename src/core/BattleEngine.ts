@@ -109,6 +109,8 @@ export interface BattleTickReport {
   defenderDamageDealt: number;
   attackerCatapultFired: boolean;
   defenderCatapultFired: boolean;
+  attackerArcherVolleyFired?: boolean;
+  defenderArcherVolleyFired?: boolean;
   attackerFlankSuccess: boolean;
   defenderFlankSuccess: boolean;
   attackerFlankCountered: boolean;
@@ -170,14 +172,16 @@ export interface BattleSession {
   deterministic: boolean;
   rngState: number;
 
-  // Fractional casualty accumulators (Soldier=1, Knight=6, Catapult=9)
-  attackerDamagePools: { soldiers: number; knights: number; catapults: number };
-  defenderDamagePools: { soldiers: number; knights: number; catapults: number };
+  // Fractional casualty accumulators (Soldier=1, Knight=6, Catapult=9, Archer=3)
+  attackerDamagePools: { soldiers: number; knights: number; catapults: number; archers?: number };
+  defenderDamagePools: { soldiers: number; knights: number; catapults: number; archers?: number };
 
   retreatPenaltyLosses: Army;
   tickerLog: string[];
   lastTickReport: BattleTickReport | null;
   committedResult: BattleResult | null;
+  attackerHasHastingsHorn?: boolean;
+  attackerHasYewBow?: boolean;
 }
 
 export interface CreateBattleSessionOptions {
@@ -203,16 +207,20 @@ export class BattleEngine {
   }
 
   /**
-   * Computes dynamic Castle Fortification Multiplier scaled by remaining wallIntegrity (0..100):
-   * 1.0 + 0.25 * (wallIntegrity / 100)
+   * Computes dynamic Castle Fortification Multiplier scaled by remaining wallIntegrity:
+   * Standard Castle: 1.0 + 0.25 * (wallIntegrity / 100) -> 1.25x (+25%)
+   * Royal Keep: 1.0 + 0.40 * (wallIntegrity / 150) -> 1.40x (+40%)
    */
   public static getCastleDefenseMultiplier(
     wallIntegrity: number,
-    hasCastle = true
+    hasCastle = true,
+    isRoyalKeep = false
   ): number {
     if (!hasCastle) return 1.0;
-    const clamped = Math.max(0, Math.min(100, wallIntegrity));
-    return Number((1.0 + 0.25 * (clamped / 100)).toFixed(4));
+    const maxIntegrity = isRoyalKeep ? 150 : 100;
+    const clamped = Math.max(0, Math.min(maxIntegrity, wallIntegrity));
+    const bonus = isRoyalKeep ? 0.4 : 0.25;
+    return Number((1.0 + bonus * (clamped / maxIntegrity)).toFixed(4));
   }
 
   /**
@@ -401,12 +409,14 @@ export class BattleEngine {
       soldiers: attacker.campaignArmy.soldiers,
       knights: attacker.campaignArmy.knights,
       catapults: attacker.campaignArmy.catapults,
+      archers: attacker.campaignArmy.archers ?? 0,
     };
 
     const campaignInitGarrison: Army = {
       soldiers: territory.garrison.soldiers,
       knights: territory.garrison.knights,
       catapults: territory.garrison.catapults,
+      archers: territory.garrison.archers ?? 0,
     };
 
     const campaignInitDefField: Army =
@@ -415,13 +425,17 @@ export class BattleEngine {
             soldiers: defender.campaignArmy.soldiers,
             knights: defender.campaignArmy.knights,
             catapults: defender.campaignArmy.catapults,
+            archers: defender.campaignArmy.archers ?? 0,
           }
-        : { soldiers: 0, knights: 0, catapults: 0 };
+        : { soldiers: 0, knights: 0, catapults: 0, archers: 0 };
 
     const campaignInitDefTotal: Army = {
       soldiers: campaignInitGarrison.soldiers + campaignInitDefField.soldiers,
       knights: campaignInitGarrison.knights + campaignInitDefField.knights,
       catapults: campaignInitGarrison.catapults + campaignInitDefField.catapults,
+      archers:
+        (campaignInitGarrison.archers ?? 0) +
+        (campaignInitDefField.archers ?? 0),
     };
 
     const siegeMod = context.siege;
@@ -442,6 +456,8 @@ export class BattleEngine {
       soldiers: initGarrison.soldiers + initDefField.soldiers,
       knights: initGarrison.knights + initDefField.knights,
       catapults: initGarrison.catapults + initDefField.catapults,
+      archers:
+        (initGarrison.archers ?? 0) + (initDefField.archers ?? 0),
     };
 
     let playerSide: BattleSide | null = null;
@@ -458,16 +474,19 @@ export class BattleEngine {
         : null;
 
     const isCastleAssault = Boolean(territory.hasCastle);
+    const isRoyalKeep = Boolean(territory.isRoyalKeep);
+    const maxIntegrity = isRoyalKeep ? 150 : 100;
     const wallIntegrity = isCastleAssault
       ? siegeMod
-        ? Math.max(0, Math.min(100, siegeMod.wallIntegrity))
-        : 100
+        ? Math.max(0, Math.min(maxIntegrity, siegeMod.wallIntegrity))
+        : maxIntegrity
       : 0;
     const wallBreached =
       isCastleAssault && (Boolean(siegeMod?.wallBreached) || wallIntegrity <= 0);
     const castleDefenseMult = this.getCastleDefenseMultiplier(
       wallIntegrity,
-      isCastleAssault
+      isCastleAssault,
+      isRoyalKeep
     );
     const hasCastleDefense = isCastleAssault && castleDefenseMult > 1.0;
 
@@ -478,12 +497,22 @@ export class BattleEngine {
       ? Math.max(0, baseDefenderLeadership - 2)
       : baseDefenderLeadership;
 
+    const hasHastingsHorn = Boolean(
+      attacker.relicIds?.includes('hastings_horn')
+    );
+    const hasYewBow = Boolean(attacker.relicIds?.includes('sherwood_yew_bow'));
+    const effectiveAttackerLeadership =
+      attacker.leadership + (hasHastingsHorn ? 2 : 0);
+
     let startingMomentum = 0;
     if (wallBreached) {
       startingMomentum += 20;
     }
     if (isPlagueInfected) {
       startingMomentum += 15; // -15 Defender starting momentum
+    }
+    if (hasHastingsHorn) {
+      startingMomentum += 10;
     }
     startingMomentum = Math.max(-100, Math.min(100, startingMomentum));
 
@@ -516,12 +545,19 @@ export class BattleEngine {
         `Plague weakens the defenders: -2 Leadership & -15 starting morale!`
       );
     }
+    if (hasHastingsHorn) {
+      initialLog.push(
+        `Warhorn of Hastings sounds across the field (+2 Leadership, +10 starting Momentum)!`
+      );
+    }
 
     const session: BattleSession = {
       attackerId: attacker.id,
       attackerName: attacker.name,
       attackerFaction: attacker.faction,
-      attackerLeadership: attacker.leadership,
+      attackerLeadership: effectiveAttackerLeadership,
+      attackerHasHastingsHorn: hasHastingsHorn,
+      attackerHasYewBow: hasYewBow,
       defenderId: defender ? defender.id : null,
       defenderName: defender ? defender.name : `${territory.name} Garrison`,
       defenderFaction: defender ? defender.faction : 'norman',
@@ -565,10 +601,10 @@ export class BattleEngine {
       deterministic: Boolean(options?.deterministic),
       rngState: seed >>> 0,
 
-      attackerDamagePools: { soldiers: 0, knights: 0, catapults: 0 },
-      defenderDamagePools: { soldiers: 0, knights: 0, catapults: 0 },
+      attackerDamagePools: { soldiers: 0, knights: 0, catapults: 0, archers: 0 },
+      defenderDamagePools: { soldiers: 0, knights: 0, catapults: 0, archers: 0 },
 
-      retreatPenaltyLosses: { soldiers: 0, knights: 0, catapults: 0 },
+      retreatPenaltyLosses: { soldiers: 0, knights: 0, catapults: 0, archers: 0 },
       tickerLog: initialLog,
       lastTickReport: null,
       committedResult: null,
@@ -580,7 +616,7 @@ export class BattleEngine {
     }
 
     // Check immediate unopposed capture if defender has 0 combat units remaining after siege
-    if (initDefTotal.soldiers + initDefTotal.knights <= 0) {
+    if (initDefTotal.soldiers + initDefTotal.knights + (initDefTotal.archers ?? 0) <= 0) {
       session.status = 'ATTACKER_WON';
       session.momentum = 100;
       session.tickerLog.push(
@@ -846,6 +882,51 @@ export class BattleEngine {
       defDamageDealt += catDmg;
     }
 
+    // Longbowmen Ranged Arrow Volleys every tick
+    let attackerArcherVolleyFired = false;
+    let defenderArcherVolleyFired = false;
+
+    const attArchers = session.attackerArmy.archers ?? 0;
+    if (attArchers > 0) {
+      attackerArcherVolleyFired = true;
+      let tacticBonus = 1.0;
+      if (session.defenderTactic === 'FEROCIOUS_ATTACK') {
+        tacticBonus = 1.3;
+      } else if (session.defenderTactic === 'STAND_AND_FIGHT') {
+        tacticBonus = 0.7;
+      }
+      let archerDmg =
+        attArchers *
+        2.5 *
+        attLeadMod *
+        tacticBonus *
+        (session.deterministic ? 1.0 : attVariance);
+      if (session.attackerHasYewBow) {
+        archerDmg *= 1.25;
+      }
+      session.defenderDamagePools.soldiers += archerDmg;
+      attDamageDealt += archerDmg;
+    }
+
+    const defArchers = session.defenderArmy.archers ?? 0;
+    if (defArchers > 0) {
+      defenderArcherVolleyFired = true;
+      let tacticBonus = 1.0;
+      if (session.attackerTactic === 'FEROCIOUS_ATTACK') {
+        tacticBonus = 1.3;
+      } else if (session.attackerTactic === 'STAND_AND_FIGHT') {
+        tacticBonus = 0.7;
+      }
+      const archerDmg =
+        defArchers *
+        2.5 *
+        defLeadMod *
+        tacticBonus *
+        (session.deterministic ? 1.0 : defVariance);
+      session.attackerDamagePools.soldiers += archerDmg;
+      defDamageDealt += archerDmg;
+    }
+
     // Route melee/cavalry damage into Soldier, Knight, and Catapult pools
     this.routeDamageToPools(
       meleeAttDamage,
@@ -1001,6 +1082,8 @@ export class BattleEngine {
       defenderDamageDealt: Number(defDamageDealt.toFixed(2)),
       attackerCatapultFired,
       defenderCatapultFired,
+      attackerArcherVolleyFired,
+      defenderArcherVolleyFired,
       attackerFlankSuccess: attEval.flankBypassSuccess,
       defenderFlankSuccess: defEval.flankBypassSuccess,
       attackerFlankCountered: attEval.flankCountered,
@@ -1097,18 +1180,24 @@ export class BattleEngine {
     if (retreatingSide === 'attacker') {
       const remSoldiers = session.attackerArmy.soldiers;
       const remKnights = session.attackerArmy.knights;
+      const remArchers = session.attackerArmy.archers ?? 0;
       let lossSoldiers =
         remSoldiers > 0 ? Math.max(remSoldiers >= 4 ? 1 : 0, Math.round(remSoldiers * this.RETREAT_PENALTY_RATE)) : 0;
       let lossKnights =
         remKnights > 0 ? Math.round(remKnights * this.RETREAT_PENALTY_RATE) : 0;
+      let lossArchers =
+        remArchers > 0 ? Math.max(remArchers >= 4 ? 1 : 0, Math.round(remArchers * this.RETREAT_PENALTY_RATE)) : 0;
 
       // Ensure at least 1 combat unit survives an orderly retreat if >= 2 existed
       if (
-        remSoldiers + remKnights >= 1 &&
-        remSoldiers - lossSoldiers + (remKnights - lossKnights) <= 0
+        remSoldiers + remKnights + remArchers >= 1 &&
+        remSoldiers - lossSoldiers + (remKnights - lossKnights) + (remArchers - lossArchers) <= 0
       ) {
         if (remKnights > 0) {
           lossKnights = remKnights - 1;
+          lossSoldiers = remSoldiers;
+        } else if (remArchers > 0) {
+          lossArchers = remArchers - 1;
           lossSoldiers = remSoldiers;
         } else {
           lossSoldiers = remSoldiers - 1;
@@ -1117,10 +1206,12 @@ export class BattleEngine {
 
       session.attackerArmy.soldiers = Math.max(0, remSoldiers - lossSoldiers);
       session.attackerArmy.knights = Math.max(0, remKnights - lossKnights);
+      session.attackerArmy.archers = Math.max(0, remArchers - lossArchers);
       session.retreatPenaltyLosses = {
         soldiers: lossSoldiers,
         knights: lossKnights,
         catapults: 0,
+        archers: lossArchers,
       };
       session.status = 'ATTACKER_RETREATED';
       this.pushTicker(
@@ -1131,15 +1222,19 @@ export class BattleEngine {
       // Defender withdraws mobile army from non-home territory; territory yields to attacker
       const remSoldiers = session.defenderArmy.soldiers;
       const remKnights = session.defenderArmy.knights;
+      const remArchers = session.defenderArmy.archers ?? 0;
       const lossSoldiers = Math.round(remSoldiers * this.RETREAT_PENALTY_RATE);
       const lossKnights = Math.round(remKnights * this.RETREAT_PENALTY_RATE);
+      const lossArchers = Math.round(remArchers * this.RETREAT_PENALTY_RATE);
 
       session.defenderArmy.soldiers = Math.max(0, remSoldiers - lossSoldiers);
       session.defenderArmy.knights = Math.max(0, remKnights - lossKnights);
+      session.defenderArmy.archers = Math.max(0, remArchers - lossArchers);
       session.retreatPenaltyLosses = {
         soldiers: lossSoldiers,
         knights: lossKnights,
         catapults: 0,
+        archers: lossArchers,
       };
       session.status = 'DEFENDER_RETREATED';
       this.pushTicker(
@@ -1213,6 +1308,11 @@ export class BattleEngine {
         0,
         session.campaignInitialAttackerArmy.catapults - session.attackerArmy.catapults
       ),
+      archers: Math.max(
+        0,
+        (session.campaignInitialAttackerArmy.archers ?? 0) -
+          (session.attackerArmy.archers ?? 0)
+      ),
     };
 
     const defenderCasualties: Army = {
@@ -1228,6 +1328,11 @@ export class BattleEngine {
         0,
         session.campaignInitialDefenderTotal.catapults - session.defenderArmy.catapults
       ),
+      archers: Math.max(
+        0,
+        (session.campaignInitialDefenderTotal.archers ?? 0) -
+          (session.defenderArmy.archers ?? 0)
+      ),
     };
 
     const attackerCapturedTerritory =
@@ -1241,7 +1346,11 @@ export class BattleEngine {
 
     if (attackerCapturedTerritory) {
       // Ensure victorious occupying army has at least 1 combat unit
-      if (session.attackerArmy.soldiers <= 0 && session.attackerArmy.knights <= 0) {
+      if (
+        session.attackerArmy.soldiers <= 0 &&
+        session.attackerArmy.knights <= 0 &&
+        (session.attackerArmy.archers ?? 0) <= 0
+      ) {
         session.attackerArmy.soldiers = 1;
       }
 
@@ -1260,7 +1369,7 @@ export class BattleEngine {
         }
       } else if (session.isDefenderFieldArmyPresent && defender && !session.isHomeCastle) {
         // Defender fought to annihilation on non-home territory
-        defender.campaignArmy = { soldiers: 0, knights: 0, catapults: 0 };
+        defender.campaignArmy = { soldiers: 0, knights: 0, catapults: 0, archers: 0 };
         const fallbackId = this.findDefenderFallbackTerritory(state, defender.id, territory.id);
         if (fallbackId) {
           defender.currentTerritoryId = fallbackId;
@@ -1268,7 +1377,7 @@ export class BattleEngine {
       }
 
       // Wipe out local shire garrison and transfer territory ownership to Attacker
-      territory.garrison = { soldiers: 0, knights: 0, catapults: 0 };
+      territory.garrison = { soldiers: 0, knights: 0, catapults: 0, archers: 0 };
       territory.ownerId = attacker.id;
       attacker.currentTerritoryId = territory.id;
       attacker.campaignArmy = { ...session.attackerArmy };
@@ -1278,7 +1387,7 @@ export class BattleEngine {
       if (homeCastleCaptured && defender) {
         defender.isActive = false;
         defender.isDefeated = true;
-        defender.campaignArmy = { soldiers: 0, knights: 0, catapults: 0 };
+        defender.campaignArmy = { soldiers: 0, knights: 0, catapults: 0, archers: 0 };
         eliminatedLordId = defender.id;
         if (state.captiveDamsel?.captorLordId === defender.id) {
           state.captiveDamsel = null;
@@ -1288,7 +1397,7 @@ export class BattleEngine {
         for (const otherTerr of Object.values(state.territories)) {
           if (otherTerr.ownerId === defender.id && otherTerr.id !== territory.id) {
             otherTerr.ownerId = null;
-            otherTerr.garrison = { soldiers: 0, knights: 0, catapults: 0 };
+            otherTerr.garrison = { soldiers: 0, knights: 0, catapults: 0, archers: 0 };
           }
         }
 
@@ -1299,6 +1408,16 @@ export class BattleEngine {
         message = `${attacker.name} conquered ${territory.name} from ${
           defender ? defender.name : 'the garrison'
         }!`;
+      }
+
+      if (
+        defender &&
+        attacker.isPlayer &&
+        !defender.isDefeated &&
+        state.edition === 'SIDEQUEST_LABS'
+      ) {
+        defender.hasVendettaAgainstPlayer = true;
+        state.nemesisLordId = defender.id;
       }
 
       // Check Campaign Defeat or Campaign Victory
@@ -1371,17 +1490,39 @@ export class BattleEngine {
   private static routeDamageToPools(
     damage: number,
     targetArmy: Army,
-    targetPools: { soldiers: number; knights: number; catapults: number },
+    targetPools: { soldiers: number; knights: number; catapults: number; archers?: number },
     flankBypassSuccess: boolean,
     targetFlankCountered: boolean
   ): void {
     const cleanDmg = Math.max(0, damage);
     if (cleanDmg <= 0) return;
 
+    const hasKnights = targetArmy.knights > 0;
+    const hasCatapults = targetArmy.catapults > 0;
+    const hasArchers = (targetArmy.archers ?? 0) > 0;
+
     if (flankBypassSuccess) {
-      // Cavalry Outflank bypasses front-line infantry to strike enemy Knights & Catapults!
-      const hasKnights = targetArmy.knights > 0;
-      const hasCatapults = targetArmy.catapults > 0;
+      // Cavalry Outflank bypasses front-line infantry to strike rear-line Archers, Knights & Catapults!
+      if (hasArchers) {
+        if (hasKnights && hasCatapults) {
+          targetPools.knights += cleanDmg * 0.35;
+          targetPools.catapults += cleanDmg * 0.20;
+          targetPools.archers = (targetPools.archers ?? 0) + cleanDmg * 0.30;
+          targetPools.soldiers += cleanDmg * 0.15;
+        } else if (hasKnights) {
+          targetPools.knights += cleanDmg * 0.45;
+          targetPools.archers = (targetPools.archers ?? 0) + cleanDmg * 0.35;
+          targetPools.soldiers += cleanDmg * 0.20;
+        } else if (hasCatapults) {
+          targetPools.catapults += cleanDmg * 0.40;
+          targetPools.archers = (targetPools.archers ?? 0) + cleanDmg * 0.40;
+          targetPools.soldiers += cleanDmg * 0.20;
+        } else {
+          targetPools.archers = (targetPools.archers ?? 0) + cleanDmg * 0.65;
+          targetPools.soldiers += cleanDmg * 0.35;
+        }
+        return;
+      }
 
       if (hasKnights && hasCatapults) {
         targetPools.knights += cleanDmg * 0.48;
@@ -1413,6 +1554,9 @@ export class BattleEngine {
       targetPools.knights += cleanDmg * 0.18;
     } else if (targetArmy.soldiers > 0) {
       targetPools.soldiers += cleanDmg;
+    } else if (hasArchers) {
+      targetPools.archers = (targetPools.archers ?? 0) + cleanDmg * 0.80;
+      targetPools.knights += cleanDmg * 0.20;
     } else if (targetArmy.knights > 0) {
       targetPools.knights += cleanDmg;
     }
@@ -1420,7 +1564,7 @@ export class BattleEngine {
 
   private static extractCasualties(
     army: Army,
-    pools: { soldiers: number; knights: number; catapults: number }
+    pools: { soldiers: number; knights: number; catapults: number; archers?: number }
   ): Army {
     const lostSoldiers = Math.min(army.soldiers, Math.floor(pools.soldiers / 1.0));
     pools.soldiers = Math.max(0, pools.soldiers - lostSoldiers * 1.0);
@@ -1434,10 +1578,17 @@ export class BattleEngine {
     pools.catapults = Math.max(0, pools.catapults - lostCatapults * 9.0);
     army.catapults -= lostCatapults;
 
+    const curArchers = army.archers ?? 0;
+    const archerPool = pools.archers ?? 0;
+    const lostArchers = Math.min(curArchers, Math.floor(archerPool / 3.0));
+    pools.archers = Math.max(0, archerPool - lostArchers * 3.0);
+    army.archers = curArchers - lostArchers;
+
     return {
       soldiers: lostSoldiers,
       knights: lostKnights,
       catapults: lostCatapults,
+      archers: lostArchers,
     };
   }
 
@@ -1448,7 +1599,7 @@ export class BattleEngine {
     if (!session.isDefenderFieldArmyPresent) {
       return {
         garrison: { ...session.defenderArmy },
-        fieldArmy: { soldiers: 0, knights: 0, catapults: 0 },
+        fieldArmy: { soldiers: 0, knights: 0, catapults: 0, archers: 0 },
       };
     }
 
@@ -1480,10 +1631,15 @@ export class BattleEngine {
       session.initialDefenderGarrison.catapults,
       session.initialDefenderFieldArmy.catapults
     );
+    const a = splitUnit(
+      session.defenderArmy.archers ?? 0,
+      session.initialDefenderGarrison.archers ?? 0,
+      session.initialDefenderFieldArmy.archers ?? 0
+    );
 
     return {
-      garrison: { soldiers: s.gar, knights: k.gar, catapults: c.gar },
-      fieldArmy: { soldiers: s.field, knights: k.field, catapults: c.field },
+      garrison: { soldiers: s.gar, knights: k.gar, catapults: c.gar, archers: a.gar },
+      fieldArmy: { soldiers: s.field, knights: k.field, catapults: c.field, archers: a.field },
     };
   }
 

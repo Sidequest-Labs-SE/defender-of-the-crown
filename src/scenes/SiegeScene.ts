@@ -12,8 +12,9 @@ import {
   PendingBattleContext,
   SiegeAmmoType,
 } from '../core/types';
-import { PALETTE, PALETTE_HEX } from '../data/palette';
+import { PALETTE, PALETTE_HEX, SIDEQUEST_PALETTE } from '../data/palette';
 import { PixelArtGenerator } from '../utils/PixelArtGenerator';
+import { SidequestArtGenerator } from '../utils/SidequestArtGenerator';
 
 export interface SiegeSceneData {
   battleContext?: PendingBattleContext;
@@ -52,6 +53,13 @@ export class SiegeScene extends Phaser.Scene {
   private castleFrontGraphics!: Phaser.GameObjects.Graphics;
   private castleFlagsGraphics!: Phaser.GameObjects.Graphics;
   private foregroundFxGraphics!: Phaser.GameObjects.Graphics;
+  private sidequestWeatherGraphics?: Phaser.GameObjects.Graphics;
+  private siegeWindParticles: Array<{
+    x: number;
+    y: number;
+    speedMult: number;
+    isGrass: boolean;
+  }> = [];
   private catapultRopeGraphics!: Phaser.GameObjects.Graphics;
   private ambientParticlesContainer!: Phaser.GameObjects.Container;
   private projectileBehindWallContainer!: Phaser.GameObjects.Container;
@@ -86,6 +94,7 @@ export class SiegeScene extends Phaser.Scene {
 
   create(data?: SiegeSceneData): void {
     PixelArtGenerator.generateAll(this);
+    SidequestArtGenerator.generateAll(this);
 
     const gameState = GameState.getInstance();
     const state = gameState.getState();
@@ -169,6 +178,9 @@ export class SiegeScene extends Phaser.Scene {
     // 2. Animate castle wind pennants & foreground fire pots
     this.drawAnimatedCastlePennants();
     this.drawForegroundFireAndPropsFx();
+    if (GameState.getInstance().isSidequestEdition()) {
+      this.updateSidequestSiegeWeather(delta);
+    }
 
     // 3. Spawn ongoing Castle Fire / Plague Miasma plumes behind ramparts
     if (this.smokeTimer >= 165) {
@@ -234,7 +246,12 @@ export class SiegeScene extends Phaser.Scene {
   // ============================================================================
 
   private createTopSiegeViewport(): void {
-    this.add.image(0, 0, 'siege_bg_landscape').setOrigin(0, 0).setDepth(1);
+    const isSidequest = GameState.getInstance().isSidequestEdition();
+    const bgKey =
+      isSidequest && this.textures.exists('sq_siege_bg_landscape')
+        ? 'sq_siege_bg_landscape'
+        : 'siege_bg_landscape';
+    this.add.image(0, 0, bgKey).setOrigin(0, 0).setDepth(1);
 
     // Drifting horizon clouds
     this.cloudSprites = [];
@@ -259,6 +276,24 @@ export class SiegeScene extends Phaser.Scene {
     this.castleFlagsGraphics = this.add.graphics().setDepth(28);
     this.projectileFrontContainer = this.add.container(0, 0).setDepth(42);
     this.foregroundFxGraphics = this.add.graphics().setDepth(58);
+
+    if (isSidequest) {
+      this.sidequestWeatherGraphics = this.add.graphics().setDepth(60);
+      const maskShape = this.make.graphics({ x: 0, y: 0 });
+      maskShape.fillStyle(0xffffff, 1);
+      maskShape.fillRect(6, 6, 1268, 498);
+      this.sidequestWeatherGraphics.setMask(maskShape.createGeometryMask());
+      this.siegeWindParticles = [];
+      for (let i = 0; i < 42; i++) {
+        const isGrass = i < 16;
+        this.siegeWindParticles.push({
+          x: (i * 79) % 1268,
+          y: isGrass ? 315 + ((i * 37) % 180) : 14 + ((i * 53) % 480),
+          speedMult: 0.75 + (i % 5) * 0.18,
+          isGrass,
+        });
+      }
+    }
 
     // Clickable Foreground Ammo Stockpiles on the Grass (1986 Homage!)
     this.createForegroundAmmoProps();
@@ -435,15 +470,37 @@ export class SiegeScene extends Phaser.Scene {
 
     // --- FRONT TOWERS, CURTAIN WALL & GATEHOUSE (depth 24) ---
     // Outer Left & Right Flanking Bastion Walls & Towers
+    const isSidequest = GameState.getInstance().isSidequestEdition();
     const drawTower = (tx: number, ty: number, tw: number, th: number) => {
       front.fillStyle(PALETTE.BLACK, 0.9);
       front.fillRect(tx - 2, ty - 2, tw + 4, th + 4);
-      front.fillStyle(PALETTE.STONE_DARK, 1);
+      front.fillStyle(
+        isSidequest ? SIDEQUEST_PALETTE.MASONRY_DARK : PALETTE.STONE_DARK,
+        1
+      );
       front.fillRect(tx, ty, tw, th);
-      front.fillStyle(PALETTE.STONE_MID, 1);
+      front.fillStyle(
+        isSidequest ? SIDEQUEST_PALETTE.MASONRY_MID : PALETTE.STONE_MID,
+        1
+      );
       front.fillRect(tx + 2, ty + 2, tw - 10, th - 2);
-      front.fillStyle(PALETTE.STONE_LIGHT, 0.85);
+      front.fillStyle(
+        isSidequest ? SIDEQUEST_PALETTE.MASONRY_HIGHLIGHT : PALETTE.STONE_LIGHT,
+        0.85
+      );
       front.fillRect(tx + 2, ty + 2, 7, th - 2);
+
+      // Richer staggered ashlar stone masonry courses in Sidequest Labs Edition
+      if (isSidequest) {
+        front.lineStyle(1, SIDEQUEST_PALETTE.MASONRY_SHADOW, 0.65);
+        for (let rowY = ty + 12; rowY < ty + th - 4; rowY += 12) {
+          front.lineBetween(tx + 2, rowY, tx + tw - 2, rowY);
+          const shift = ((rowY - ty) / 12) % 2 === 0 ? 10 : 20;
+          for (let colX = tx + shift; colX < tx + tw - 4; colX += 18) {
+            front.lineBetween(colX, rowY - 12, colX, rowY);
+          }
+        }
+      }
 
       // Battlements
       const step = 14;
@@ -483,9 +540,19 @@ export class SiegeScene extends Phaser.Scene {
       front.fillRect(584, 164, 108, 78);
 
       // Subtle stone block courses
-      front.lineStyle(1, PALETTE.STONE_DARK, 0.55);
+      front.lineStyle(
+        1,
+        isSidequest ? SIDEQUEST_PALETTE.MASONRY_SHADOW : PALETTE.STONE_DARK,
+        isSidequest ? 0.72 : 0.55
+      );
       for (let my = 178; my < 240; my += 14) {
         front.lineBetween(584, my, 696, my);
+        if (isSidequest) {
+          const shift = ((my - 178) / 14) % 2 === 0 ? 12 : 24;
+          for (let mx = 584 + shift; mx < 692; mx += 22) {
+            front.lineBetween(mx, my - 14, mx, my);
+          }
+        }
       }
 
       // Upper Curtain Battlements (missing crenels as wall degrades)
@@ -1194,6 +1261,7 @@ export class SiegeScene extends Phaser.Scene {
   }
 
   private spawnCourtyardFireSmokePlume(): void {
+    const isSidequest = GameState.getInstance().isSidequestEdition();
     const sx = 640 + Phaser.Math.Between(-42, 42);
     const sy = 172;
     const isFlame = Math.random() < 0.38;
@@ -1201,23 +1269,50 @@ export class SiegeScene extends Phaser.Scene {
       sx,
       sy,
       isFlame ? Phaser.Math.Between(6, 11) : Phaser.Math.Between(10, 16),
-      isFlame ? PALETTE.GOLD_BRIGHT : 0x262428,
-      isFlame ? 0.72 : 0.48
+      isFlame
+        ? isSidequest
+          ? SIDEQUEST_PALETTE.TORCH_AMBER
+          : PALETTE.GOLD_BRIGHT
+        : 0x262428,
+      isFlame ? 0.76 : 0.52
     );
     this.ambientParticlesContainer.add(puff);
 
     this.tweens.add({
       targets: puff,
       x: sx + this.session.wind * 3.5 + Phaser.Math.Between(-8, 8),
-      y: sy - (isFlame ? 32 : 76),
-      scale: isFlame ? 0.5 : 2.1,
+      y: sy - (isFlame ? 32 : 84),
+      scale: isFlame ? 0.5 : 2.2,
       alpha: 0,
-      duration: isFlame ? 480 : 1450,
+      duration: isFlame ? 480 : 1550,
       onComplete: () => puff.destroy(),
     });
+
+    // Persistent glowing rising embers in Sidequest Labs Edition
+    if (isSidequest) {
+      const ember = this.add.rectangle(
+        sx + Phaser.Math.Between(-14, 14),
+        sy,
+        3,
+        3,
+        Math.random() < 0.5
+          ? SIDEQUEST_PALETTE.TORCH_GLOW
+          : SIDEQUEST_PALETTE.TORCH_ORANGE
+      );
+      this.ambientParticlesContainer.add(ember);
+      this.tweens.add({
+        targets: ember,
+        x: ember.x + this.session.wind * 5 + Phaser.Math.Between(-18, 18),
+        y: sy - Phaser.Math.Between(55, 110),
+        alpha: 0,
+        duration: 1200,
+        onComplete: () => ember.destroy(),
+      });
+    }
   }
 
   private spawnCourtyardPlagueMiasma(): void {
+    const isSidequest = GameState.getInstance().isSidequestEdition();
     const sx = 640 + Phaser.Math.Between(-46, 46);
     const sy = 174;
     const cloud = this.add.circle(
@@ -1225,19 +1320,38 @@ export class SiegeScene extends Phaser.Scene {
       sy,
       Phaser.Math.Between(9, 15),
       Math.random() < 0.5 ? 0x7ccf35 : 0xb8f252,
-      0.38
+      isSidequest ? 0.46 : 0.38
     );
     this.ambientParticlesContainer.add(cloud);
 
     this.tweens.add({
       targets: cloud,
       x: sx + this.session.wind * 2.8 + Phaser.Math.Between(-12, 12),
-      y: sy - 64,
-      scale: 1.9,
+      y: sy - 68,
+      scale: 2.0,
       alpha: 0,
-      duration: 1350,
+      duration: 1400,
       onComplete: () => cloud.destroy(),
     });
+
+    if (isSidequest) {
+      const spore = this.add.rectangle(
+        sx + Phaser.Math.Between(-16, 16),
+        sy,
+        3,
+        3,
+        0xd4ff70
+      );
+      this.ambientParticlesContainer.add(spore);
+      this.tweens.add({
+        targets: spore,
+        x: spore.x + this.session.wind * 4 + Phaser.Math.Between(-14, 14),
+        y: sy - Phaser.Math.Between(48, 92),
+        alpha: 0,
+        duration: 1150,
+        onComplete: () => spore.destroy(),
+      });
+    }
   }
 
   private spawnFloatingCallout(
@@ -1408,14 +1522,17 @@ export class SiegeScene extends Phaser.Scene {
     bg.fillRoundedRect(x + 8, y + 8, w - 16, 44, 4);
     this.leftStatusContainer.add(bg);
 
-    const attShieldKey = this.textures.exists(`shield_${this.session.attackerId}`)
-      ? `shield_${this.session.attackerId}`
-      : 'shield_garrison';
-    const defShieldKey =
-      this.session.defenderId &&
-      this.textures.exists(`shield_${this.session.defenderId}`)
-        ? `shield_${this.session.defenderId}`
-        : 'shield_garrison';
+    const isSidequest = GameState.getInstance().isSidequestEdition();
+    const attShieldKey = SidequestArtGenerator.getShieldKey(
+      this,
+      this.session.attackerId || 'garrison',
+      isSidequest
+    );
+    const defShieldKey = SidequestArtGenerator.getShieldKey(
+      this,
+      this.session.defenderId ?? 'garrison',
+      isSidequest
+    );
 
     const attShield = this.add
       .image(x + 26, y + 30, attShieldKey)
@@ -2436,5 +2553,49 @@ export class SiegeScene extends Phaser.Scene {
         focusTerritoryId: this.session.originTerritoryId,
       });
     });
+  }
+
+  /**
+   * Sidequest Labs Dynamic Siege Weather Atmosphere:
+   * Wind-slanted rain streaks & wind-blown grass/dust particles synchronized with `session.wind`!
+   */
+  private updateSidequestSiegeWeather(delta: number): void {
+    if (!this.sidequestWeatherGraphics) return;
+    const dt = delta / 1000;
+    const g = this.sidequestWeatherGraphics;
+    g.clear();
+
+    const wind = this.session.wind;
+    const vxBase = (wind === 0 ? 12 : wind * 26);
+
+    for (const p of this.siegeWindParticles) {
+      if (p.isGrass) {
+        // Wind-blown grass blades & meadow dust across the siege valley
+        p.x += vxBase * 1.15 * p.speedMult * dt;
+        p.y += Math.sin(this.envTimer * 2.2 + p.x * 0.03) * 14 * dt;
+        if (p.x > 1272) p.x = 10;
+        if (p.x < 8) p.x = 1270;
+        if (p.y < 305) p.y = 485;
+        if (p.y > 495) p.y = 315;
+
+        g.fillStyle(SIDEQUEST_PALETTE.SPRING_MEADOW_BRIGHT, 0.72);
+        g.fillRect(p.x, p.y, 4, 2);
+      } else {
+        // Slanted atmospheric rain / wind streaks matching catapult wind drift
+        const vx = vxBase * 1.4 * p.speedMult;
+        const vy = 220 * p.speedMult;
+        p.x += vx * dt;
+        p.y += vy * dt;
+        if (p.y > 502) {
+          p.y = 8;
+          p.x = Math.random() * 1268;
+        }
+        if (p.x > 1274) p.x = 8;
+        if (p.x < 8) p.x = 1272;
+
+        g.lineStyle(1, 0xcbe4f5, 0.28);
+        g.lineBetween(p.x, p.y, p.x + vx * 0.035, p.y + 11);
+      }
+    }
   }
 }

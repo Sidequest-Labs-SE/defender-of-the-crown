@@ -206,6 +206,7 @@ export interface SwordplaySession {
 
   player: DuelistState;
   enemy: DuelistState;
+  attackerHasExcalibur?: boolean;
 
   /**
    * Footing / Push-back line across the castle room:
@@ -411,6 +412,13 @@ export class SwordplayEngine {
         : undefined;
     const damsel = damselId ? SAXON_DAMSELS[damselId] : undefined;
 
+    const attackerHasExcalibur =
+      state.edition === 'SIDEQUEST_LABS' &&
+      Boolean(attacker.relicIds?.includes('excalibur_hilt'));
+    const effectiveSwordplay = attackerHasExcalibur
+      ? Math.min(10, attacker.swordplay + 2)
+      : attacker.swordplay;
+
     const playerDuelist: DuelistState = {
       id: attacker.id,
       name: attacker.name,
@@ -418,7 +426,7 @@ export class SwordplayEngine {
       portraitKey: `portrait_${attacker.id}`,
       faction: attacker.faction,
       role: 'PLAYER',
-      swordplay: Math.max(1, Math.min(10, attacker.swordplay)),
+      swordplay: Math.max(1, Math.min(10, effectiveSwordplay)),
       health: 100,
       maxHealth: 100,
       stamina: 100,
@@ -437,7 +445,9 @@ export class SwordplayEngine {
     const initialDefender: DuelistState = { ...stage1.defender };
 
     const introMsg =
-      context.missionType === 'RESCUE' && damsel
+      context.missionType === 'ASSASSIN'
+        ? `A hooded assassin leaps from the shadows of ${territoryName} to slay ${attacker.name}!`
+        : context.missionType === 'RESCUE' && damsel
         ? `${attacker.name} slips into ${territoryName} by moonlight to rescue ${damsel.name}!`
         : `${attacker.name} scales the walls of ${territoryName} to raid ${targetLord.name}'s treasury!`;
 
@@ -457,6 +467,7 @@ export class SwordplayEngine {
       stagesCleared: 0,
       player: playerDuelist,
       enemy: initialDefender,
+      attackerHasExcalibur,
       position: 0,
       telegraphedEnemyAction: null,
       telegraphZone: null,
@@ -467,7 +478,7 @@ export class SwordplayEngine {
       committed: false,
       tickerLog: [
         introMsg,
-        `${stage1.stageHeader} — ${initialDefender.name} bars the gate! En Garde!`,
+        `${stage1.stageHeader} — ${initialDefender.name} draws steel! En Garde!`,
       ],
     };
   }
@@ -477,6 +488,32 @@ export class SwordplayEngine {
     territoryName: string,
     missionType: SwordplayMissionType
   ): CastleStageEncounter[] {
+    if (missionType === 'ASSASSIN') {
+      const assassinStage: CastleStageEncounter = {
+        stageNumber: 1,
+        roomCode: 'COURTYARD',
+        stageHeader: 'NIGHT ASSASSIN DUEL',
+        roomTitle: `${territoryName} — Torchlit Bedchamber`,
+        telegraphBaseMs: 400,
+        defender: {
+          id: `${targetLord.id}_assassin`,
+          name: 'Shadow Blade Assassin',
+          title: 'Emissary of Blood Vendetta',
+          portraitKey: 'portrait_garrison',
+          faction: targetLord.faction,
+          role: 'GUARD',
+          swordplay: 7,
+          health: 90,
+          maxHealth: 90,
+          stamina: 100,
+          maxStamina: 100,
+          stance: 'HIGH',
+          riposteReady: false,
+        },
+      };
+      return [assassinStage];
+    }
+
     const lordSkill = Math.max(1, Math.min(10, targetLord.swordplay));
     const guard1Skill = Math.max(2, Math.min(6, Math.round(lordSkill * 0.55)));
     const guard2Skill = Math.max(3, Math.min(8, Math.round(lordSkill * 0.8)));
@@ -943,9 +980,12 @@ export class SwordplayEngine {
 
     // 3A. Riposte Strike ALWAYS pierces defense for 1.6x counter-damage & heavy pushback!
     if (riposteActive) {
+      const riposteMult = session.attackerHasExcalibur
+        ? Number((this.RIPOSTE_DAMAGE_MULT * 1.1).toFixed(2))
+        : this.RIPOSTE_DAMAGE_MULT;
       const riposteDmg = Math.max(
         10,
-        Math.round(pProf.baseDamage * pMult * this.RIPOSTE_DAMAGE_MULT)
+        Math.round(pProf.baseDamage * pMult * riposteMult)
       );
       const ripostePush = Math.max(
         14,
@@ -1282,7 +1322,7 @@ export class SwordplayEngine {
     if (session.status !== 'ACTIVE') {
       return false;
     }
-    if (session.stageNumber >= 3) {
+    if (session.stageNumber >= session.stages.length) {
       session.status = 'VICTORY';
       return false;
     }
@@ -1463,7 +1503,23 @@ export class SwordplayEngine {
     // OUTCOME A: VICTORY!
     // ------------------------------------------------------------------------
     if (session.status === 'VICTORY') {
-      if (session.missionType === 'RAID') {
+      if (session.missionType === 'ASSASSIN') {
+        goldStolenTotal = 12;
+        if (attacker) {
+          attacker.gold += 12;
+        }
+        if (state.edition === 'SIDEQUEST_LABS') {
+          state.nemesisLordId = null;
+          if (targetLord) {
+            targetLord.hasVendettaAgainstPlayer = false;
+          }
+        }
+        state.pendingAssassinMission = false;
+        headline = 'NIGHT ASSASSIN FOILED!';
+        chronicleMessage = `${attacker?.name ?? 'Lord'} vanquished the Night Assassin dispatched by ${
+          targetLord?.name ?? 'a rival'
+        } and seized a +12 Gold bounty!`;
+      } else if (session.missionType === 'RAID') {
         const loot = this.calculateRaidLoot(targetLord ? targetLord.gold : 0);
         goldStolenTotal = loot.totalGoldStolen;
         goldTakenFromLord = loot.takenFromLord;
@@ -1474,6 +1530,16 @@ export class SwordplayEngine {
         }
         if (attacker) {
           attacker.gold += goldStolenTotal;
+        }
+
+        if (state.edition === 'SIDEQUEST_LABS') {
+          if (targetLord && !targetLord.isPlayer) {
+            state.nemesisLordId = targetLord.id;
+            targetLord.hasVendettaAgainstPlayer = true;
+          }
+          if (attacker && attacker.isPlayer) {
+            GameState.getInstance().awardRelic(attacker.id);
+          }
         }
 
         headline = 'TREASURY VAULT PLUNDERED!';
@@ -1515,6 +1581,10 @@ export class SwordplayEngine {
         }
         state.captiveDamsel = null;
 
+        if (state.edition === 'SIDEQUEST_LABS' && attacker && attacker.isPlayer) {
+          GameState.getInstance().awardRelic(attacker.id);
+        }
+
         headline = marriedDamsel
           ? `ESPOUSED TO ${damsel.name.toUpperCase()}!`
           : `${damsel.name.toUpperCase()} RESCUED!`;
@@ -1529,36 +1599,57 @@ export class SwordplayEngine {
     // OUTCOME B: DEFEATED & CORNERED BY GUARDS!
     // ------------------------------------------------------------------------
     else if (session.status === 'DEFEATED') {
-      if (session.missionType === 'RESCUE') {
-        state.captiveDamsel = null;
-      }
-
-      if (options?.useRobinHoodBailout && state.robinHoodUsesLeft > 0) {
-        state.robinHoodUsesLeft -= 1;
-        robinHoodBailoutUsed = true;
-        ransomPaid = 0;
-
-        headline = 'ROBIN HOOD DUNGEON BREAKOUT!';
-        chronicleMessage = `Robin Hood's Merry Men stormed ${
-          session.targetTerritoryName
-        }'s dungeon and rescued ${attacker?.name ?? 'thee'} for 0 Gold lost! (${
-          state.robinHoodUsesLeft
-        }/3 favors left)`;
-      } else {
-        ransomPaid = this.calculateDefeatRansom(attacker ? attacker.gold : 0);
+      if (session.missionType === 'ASSASSIN') {
+        const goldLost = Math.min(attacker ? attacker.gold : 0, 10);
         if (attacker) {
-          attacker.gold = Math.max(0, attacker.gold - ransomPaid);
+          attacker.gold = Math.max(0, attacker.gold - goldLost);
         }
-        if (targetLord) {
-          targetLord.gold += ransomPaid;
+        state.pendingAssassinMission = false;
+        ransomPaid = goldLost;
+        headline = 'STRUCK BY NIGHT ASSASSIN!';
+        chronicleMessage = `A Night Assassin wounded ${attacker?.name ?? 'thee'} in the shadows! (-${goldLost} Gold stolen / medical recovery)`;
+      } else {
+        if (session.missionType === 'RESCUE') {
+          state.captiveDamsel = null;
         }
 
-        headline = 'CAPTURED IN THE KEEP!';
-        chronicleMessage = `${attacker?.name ?? 'Saxon Hero'} was captured in ${
-          session.targetTerritoryName
-        } and paid ${ransomPaid} Gold ransom to ${
-          targetLord?.name ?? 'the castle lord'
-        }!`;
+        if (options?.useRobinHoodBailout && state.robinHoodUsesLeft > 0) {
+          state.robinHoodUsesLeft -= 1;
+          robinHoodBailoutUsed = true;
+          ransomPaid = 0;
+
+          const isNorman = attacker?.faction === 'norman';
+          if (isNorman) {
+            headline = 'PRINCE JOHN ROYAL WRIT BAILOUT!';
+            chronicleMessage = `Prince John's Royal Writ compelled ${
+              session.targetTerritoryName
+            }'s dungeon masters to release ${attacker?.name ?? 'thee'} for 0 Gold lost! (${
+              state.robinHoodUsesLeft
+            }/3 favors left)`;
+          } else {
+            headline = 'ROBIN HOOD DUNGEON BREAKOUT!';
+            chronicleMessage = `Robin Hood's Merry Men stormed ${
+              session.targetTerritoryName
+            }'s dungeon and rescued ${attacker?.name ?? 'thee'} for 0 Gold lost! (${
+              state.robinHoodUsesLeft
+            }/3 favors left)`;
+          }
+        } else {
+          ransomPaid = this.calculateDefeatRansom(attacker ? attacker.gold : 0);
+          if (attacker) {
+            attacker.gold = Math.max(0, attacker.gold - ransomPaid);
+          }
+          if (targetLord) {
+            targetLord.gold += ransomPaid;
+          }
+
+          headline = 'CAPTURED IN THE KEEP!';
+          chronicleMessage = `${attacker?.name ?? 'Saxon Hero'} was captured in ${
+            session.targetTerritoryName
+          } and paid ${ransomPaid} Gold ransom to ${
+            targetLord?.name ?? 'the castle lord'
+          }!`;
+        }
       }
     }
     // ------------------------------------------------------------------------
@@ -1623,7 +1714,7 @@ export class SwordplayEngine {
         session.stageNumber
       );
 
-      if (session.stageNumber >= 3) {
+      if (session.stageNumber >= session.stages.length) {
         session.status = 'VICTORY';
         const winLine =
           reason === 'FORCED_YIELD'

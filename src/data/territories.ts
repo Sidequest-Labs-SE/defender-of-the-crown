@@ -392,3 +392,61 @@ export const INITIAL_TERRITORIES: Record<string, Territory> = {
 };
 
 export const TERRITORY_IDS = Object.keys(INITIAL_TERRITORIES);
+
+/**
+ * Strategic Coastal Sea Lanes (Sidequest Labs Edition)
+ * Enables amphibious fleet landings and coastal port relocations for 5 Gold.
+ */
+export const EAST_COAST_PORTS: readonly string[] = [
+  'northumberland',
+  'yorkshire',
+  'lincoln',
+  'norfolk',
+  'essex',
+  'kent',
+] as const;
+
+export const WEST_COAST_PORTS: readonly string[] = [
+  'kent',
+  'wiltshire',
+  'somerset',
+  'sussex',
+  'hampshire',
+  'cornwall',
+  'gloucester',
+  'gwynedd',
+  'cheshire',
+  'lancashire',
+  'cumberland',
+] as const;
+
+export const NAVAL_CHARTER_COST = 5;
+
+export function isCoastalPort(territoryId: string): boolean {
+  return (
+    EAST_COAST_PORTS.includes(territoryId) ||
+    WEST_COAST_PORTS.includes(territoryId)
+  );
+}
+
+export function getConnectedSeaPorts(
+  territoryId: string,
+  territories?: Record<string, Territory>
+): string[] {
+  const ports = new Set<string>();
+  if (EAST_COAST_PORTS.includes(territoryId)) {
+    for (const p of EAST_COAST_PORTS) {
+      if (p !== territoryId && (!territories || territories[p])) {
+        ports.add(p);
+      }
+    }
+  }
+  if (WEST_COAST_PORTS.includes(territoryId)) {
+    for (const p of WEST_COAST_PORTS) {
+      if (p !== territoryId && (!territories || territories[p])) {
+        ports.add(p);
+      }
+    }
+  }
+  return Array.from(ports);
+}

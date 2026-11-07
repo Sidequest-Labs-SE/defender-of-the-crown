@@ -14,9 +14,11 @@ import {
   BattleTactic,
   getCinemawareStatRating,
   PendingBattleContext,
+  Season,
 } from '../core/types';
-import { PALETTE, PALETTE_HEX } from '../data/palette';
+import { PALETTE, PALETTE_HEX, SIDEQUEST_PALETTE } from '../data/palette';
 import { PixelArtGenerator } from '../utils/PixelArtGenerator';
+import { SidequestArtGenerator } from '../utils/SidequestArtGenerator';
 
 export interface BattleSceneData {
   battleContext?: PendingBattleContext;
@@ -49,6 +51,23 @@ export class BattleScene extends Phaser.Scene {
   // Arena Visual Containers (y: 0..490)
   private frontlineGraphics!: Phaser.GameObjects.Graphics;
   private regimentsContainer!: Phaser.GameObjects.Container;
+  private sidequestBannerGraphics?: Phaser.GameObjects.Graphics;
+  private sidequestAtmosphereGraphics?: Phaser.GameObjects.Graphics;
+  private battleMistClouds: Array<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    speed: number;
+    alpha: number;
+  }> = [];
+  private battleWeatherParticles: Array<{
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    size: number;
+  }> = [];
   private fxContainer!: Phaser.GameObjects.Container;
   private topMomentumGraphics!: Phaser.GameObjects.Graphics;
   private topMatchupText!: Phaser.GameObjects.Text;
@@ -61,6 +80,8 @@ export class BattleScene extends Phaser.Scene {
   private defenderKnightSprites: Phaser.GameObjects.Image[] = [];
   private attackerCatapultSprites: Phaser.GameObjects.Image[] = [];
   private defenderCatapultSprites: Phaser.GameObjects.Image[] = [];
+  private attackerArcherSprites: Phaser.GameObjects.Image[] = [];
+  private defenderArcherSprites: Phaser.GameObjects.Image[] = [];
   private attackerBannerSprite?: Phaser.GameObjects.Image;
   private defenderBannerSprite?: Phaser.GameObjects.Image;
 
@@ -68,6 +89,8 @@ export class BattleScene extends Phaser.Scene {
   private soldierUnitsPerSpriteDef = 1;
   private knightUnitsPerSpriteAtt = 1;
   private knightUnitsPerSpriteDef = 1;
+  private archerUnitsPerSpriteAtt = 1;
+  private archerUnitsPerSpriteDef = 1;
 
   // Bottom Tactical Command Deck Containers (y: 490..720)
   private leftCardContainer!: Phaser.GameObjects.Container;
@@ -81,12 +104,14 @@ export class BattleScene extends Phaser.Scene {
     soldiers: Phaser.GameObjects.Text;
     knights: Phaser.GameObjects.Text;
     catapults: Phaser.GameObjects.Text;
+    archers?: Phaser.GameObjects.Text;
     tacticBadge: Phaser.GameObjects.Text;
   };
   private defCountTexts?: {
     soldiers: Phaser.GameObjects.Text;
     knights: Phaser.GameObjects.Text;
     catapults: Phaser.GameObjects.Text;
+    archers?: Phaser.GameObjects.Text;
     tacticBadge: Phaser.GameObjects.Text;
   };
 
@@ -96,6 +121,7 @@ export class BattleScene extends Phaser.Scene {
 
   create(data?: BattleSceneData): void {
     PixelArtGenerator.generateAll(this);
+    SidequestArtGenerator.generateAll(this);
 
     const gameState = GameState.getInstance();
     const state = gameState.getState();
@@ -170,6 +196,9 @@ export class BattleScene extends Phaser.Scene {
     );
     this.drawFrontlineMarker();
     this.updateIdleFormationPositions();
+    if (GameState.getInstance().isSidequestEdition()) {
+      this.updateSidequestBattleAtmosphere(delta);
+    }
 
     if (this.session.status !== 'ONGOING' || this.isPaused) {
       return;
@@ -211,7 +240,15 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createTopBattlefieldArena(): void {
-    const bgKey = this.session.isCastleAssault ? 'battle_bg_siege' : 'battle_bg_field';
+    const gs = GameState.getInstance();
+    const isSidequest = gs.isSidequestEdition();
+    const season: Season = gs.getSeason();
+    const bgKey = SidequestArtGenerator.getBattleBackdropKey(
+      this,
+      this.session.isCastleAssault,
+      season,
+      isSidequest
+    );
     this.add.image(0, 0, bgKey).setOrigin(0, 0);
 
     // Render post-siege Wall Breach / Fire / Plague state on the distant right-hand Castle!
@@ -243,6 +280,15 @@ export class BattleScene extends Phaser.Scene {
 
     this.frontlineGraphics = this.add.graphics();
     this.regimentsContainer = this.add.container(0, 0);
+    if (isSidequest) {
+      this.sidequestBannerGraphics = this.add.graphics();
+      this.sidequestAtmosphereGraphics = this.add.graphics();
+      const maskShape = this.make.graphics({ x: 0, y: 0 });
+      maskShape.fillStyle(0xffffff, 1);
+      maskShape.fillRect(6, 6, 1268, 478);
+      this.sidequestAtmosphereGraphics.setMask(maskShape.createGeometryMask());
+      this.initSidequestBattleAtmosphere(season);
+    }
     this.fxContainer = this.add.container(0, 0);
 
     // Ornate Arena Frame Bezel (0..1280 x 0..490)
@@ -291,6 +337,8 @@ export class BattleScene extends Phaser.Scene {
     this.defenderKnightSprites = [];
     this.attackerCatapultSprites = [];
     this.defenderCatapultSprites = [];
+    this.attackerArcherSprites = [];
+    this.defenderArcherSprites = [];
 
     // 1. Rear-Guard Catapults (up to 3 visual engines per side)
     const attCatVis = Math.min(3, this.session.initialAttackerArmy.catapults);
@@ -408,12 +456,80 @@ export class BattleScene extends Phaser.Scene {
       this.defenderKnightSprites.push(spr);
     }
 
+    // 5. Longbowmen (Archers) Support Formation behind Infantry (Sidequest Labs)
+    const isSidequest = GameState.getInstance().isSidequestEdition();
+    const maxArcherSprites = 6;
+    const attArchers = isSidequest ? (this.session.initialAttackerArmy.archers ?? 0) : 0;
+    const defArchers = isSidequest ? (this.session.initialDefenderTotal.archers ?? 0) : 0;
+
+    this.archerUnitsPerSpriteAtt = Math.max(
+      1,
+      Math.ceil(Math.max(1, attArchers) / maxArcherSprites)
+    );
+    this.archerUnitsPerSpriteDef = Math.max(
+      1,
+      Math.ceil(Math.max(1, defArchers) / maxArcherSprites)
+    );
+
+    const attArcherVis = Math.min(
+      maxArcherSprites,
+      Math.ceil(attArchers / this.archerUnitsPerSpriteAtt)
+    );
+    for (let i = 0; i < attArcherVis; i++) {
+      const spr = this.add
+        .image(360, 310, 'sq_unit_archer_0')
+        .setScale(1.55);
+      spr.setData('slotIndex', i);
+      spr.setData('alive', true);
+      this.regimentsContainer.add(spr);
+      this.attackerArcherSprites.push(spr);
+    }
+
+    const defArcherVis = Math.min(
+      maxArcherSprites,
+      Math.ceil(defArchers / this.archerUnitsPerSpriteDef)
+    );
+    for (let i = 0; i < defArcherVis; i++) {
+      const spr = this.add
+        .image(920, 310, 'sq_unit_archer_0')
+        .setScale(1.55)
+        .setFlipX(true);
+      spr.setData('slotIndex', i);
+      spr.setData('alive', true);
+      this.regimentsContainer.add(spr);
+      this.defenderArcherSprites.push(spr);
+    }
+
     this.updateIdleFormationPositions();
   }
 
   private updateIdleFormationPositions(): void {
     const flX = this.displayedFrontlineX;
     const marchBob = Math.sin(this.bobTimer) * 1.8;
+
+    // Position Attacker Longbowmen (Behind Infantry)
+    for (const spr of this.attackerArcherSprites) {
+      if (!spr.getData('alive')) continue;
+      const idx = spr.getData('slotIndex') as number;
+      const rank = Math.floor(idx / 3);
+      const row = idx % 3;
+      const baseX = flX - 165 - rank * 32;
+      const baseY = 296 + row * 34 + Math.sin(this.bobTimer + idx * 0.9) * 1.4;
+      spr.setPosition(baseX, baseY);
+      spr.setDepth(96 + Math.round(baseY));
+    }
+
+    // Position Defender Longbowmen (Behind Infantry)
+    for (const spr of this.defenderArcherSprites) {
+      if (!spr.getData('alive')) continue;
+      const idx = spr.getData('slotIndex') as number;
+      const rank = Math.floor(idx / 3);
+      const row = idx % 3;
+      const baseX = flX + 165 + rank * 32;
+      const baseY = 296 + row * 34 + Math.sin(this.bobTimer + idx * 0.9 + 1.2) * 1.4;
+      spr.setPosition(baseX, baseY);
+      spr.setDepth(96 + Math.round(baseY));
+    }
 
     // Position Attacker Infantry Block (Left of Frontline)
     for (const spr of this.attackerSoldierSprites) {
@@ -442,17 +558,69 @@ export class BattleScene extends Phaser.Scene {
     }
 
     // Banners behind infantry blocks
+    const isSidequest = GameState.getInstance().isSidequestEdition();
     if (this.attackerBannerSprite) {
       const aliveAtt = this.session.attackerArmy.soldiers + this.session.attackerArmy.knights > 0;
       this.attackerBannerSprite.setVisible(aliveAtt);
       this.attackerBannerSprite.setPosition(flX - 182, 326 + marchBob);
+      if (isSidequest) {
+        this.attackerBannerSprite.setRotation(Math.sin(this.bobTimer * 1.8) * 0.08);
+      }
       this.attackerBannerSprite.setDepth(95);
     }
     if (this.defenderBannerSprite) {
       const aliveDef = this.session.defenderArmy.soldiers + this.session.defenderArmy.knights > 0;
       this.defenderBannerSprite.setVisible(aliveDef);
       this.defenderBannerSprite.setPosition(flX + 182, 326 - marchBob);
+      if (isSidequest) {
+        this.defenderBannerSprite.setRotation(-Math.sin(this.bobTimer * 1.8 + 0.9) * 0.08);
+      }
       this.defenderBannerSprite.setDepth(95);
+    }
+
+    // Richer fluttering banner streamers in Sidequest Labs Edition
+    if (isSidequest && this.sidequestBannerGraphics) {
+      this.sidequestBannerGraphics.clear();
+      const drawStreamer = (
+        bx: number,
+        by: number,
+        dir: number,
+        color: number,
+        phase: number
+      ) => {
+        const wave1 = Math.sin(this.bobTimer * 3.2 + phase) * 5;
+        const wave2 = Math.cos(this.bobTimer * 3.8 + phase) * 7;
+        this.sidequestBannerGraphics!.fillStyle(color, 0.92);
+        this.sidequestBannerGraphics!.beginPath();
+        this.sidequestBannerGraphics!.moveTo(bx, by - 24);
+        this.sidequestBannerGraphics!.lineTo(bx + dir * 22, by - 22 + wave1);
+        this.sidequestBannerGraphics!.lineTo(bx + dir * 36, by - 17 + wave2);
+        this.sidequestBannerGraphics!.lineTo(bx + dir * 20, by - 13 + wave1);
+        this.sidequestBannerGraphics!.lineTo(bx, by - 14);
+        this.sidequestBannerGraphics!.closePath();
+        this.sidequestBannerGraphics!.fillPath();
+      };
+
+      if (this.attackerBannerSprite?.visible) {
+        drawStreamer(
+          this.attackerBannerSprite.x,
+          this.attackerBannerSprite.y,
+          -1,
+          SIDEQUEST_PALETTE.AZURE_HIGHLIGHT,
+          0
+        );
+      }
+      if (this.defenderBannerSprite?.visible) {
+        drawStreamer(
+          this.defenderBannerSprite.x,
+          this.defenderBannerSprite.y,
+          1,
+          this.defenderTheme === 'rival_saxon'
+            ? SIDEQUEST_PALETTE.EMERALD_HIGHLIGHT
+            : SIDEQUEST_PALETTE.CRIMSON_HIGHLIGHT,
+          1.4
+        );
+      }
     }
 
     // Position Attacker Mounted Knights on Upper & Lower Flanks (unless mid-charge tween)
@@ -662,9 +830,81 @@ export class BattleScene extends Phaser.Scene {
       );
     }
 
+    // Longbowmen Ranged Arrow Volleys (Sidequest Labs)
+    if (report.attackerArcherVolleyFired) {
+      this.animateArcherVolley(
+        this.attackerArcherSprites,
+        'attacker',
+        flX - 165,
+        flX + 68
+      );
+    }
+    if (report.defenderArcherVolleyFired) {
+      this.animateArcherVolley(
+        this.defenderArcherSprites,
+        'defender',
+        flX + 165,
+        flX - 68
+      );
+    }
+
     // Floating Casualty Badges over Hit Formations
     this.spawnCasualtyPopups(report.attackerLosses, flX - 75, '#FF6B6B');
     this.spawnCasualtyPopups(report.defenderLosses, flX + 75, PALETTE_HEX.GOLD_BRIGHT);
+  }
+
+  private animateArcherVolley(
+    archerSprites: Phaser.GameObjects.Image[],
+    side: BattleSide,
+    originX: number,
+    targetX: number
+  ): void {
+    for (const spr of archerSprites) {
+      if (!spr.active || !spr.getData('alive')) continue;
+      spr.setTexture('sq_unit_archer_1');
+      this.time.delayedCall(this.isFastSpeed ? 160 : 300, () => {
+        if (spr.active) {
+          spr.setTexture('sq_unit_archer_0');
+        }
+      });
+    }
+
+    const count = Math.min(5, Math.max(2, archerSprites.length));
+    for (let i = 0; i < count; i++) {
+      const startX = originX + Phaser.Math.Between(-12, 12);
+      const startY = 294 + i * 22 + Phaser.Math.Between(-6, 6);
+      const endX = targetX + Phaser.Math.Between(-28, 28);
+      const endY = 300 + i * 22 + Phaser.Math.Between(-10, 10);
+      const arrow = this.add.image(startX, startY, 'sq_arrow').setScale(1.4);
+      if (side === 'defender') {
+        arrow.setFlipX(true);
+      }
+      this.fxContainer.add(arrow);
+
+      const flightDuration = (this.isFastSpeed ? 200 : 380) + i * 30;
+      const arcHeight = 70 + i * 12;
+
+      this.tweens.add({
+        targets: { t: 0 },
+        t: 1,
+        duration: flightDuration,
+        ease: 'Linear',
+        onUpdate: (_tw, obj: { t: number }) => {
+          if (!arrow.active) return;
+          const p = obj.t;
+          const ax = Phaser.Math.Linear(startX, endX, p);
+          const ay = Phaser.Math.Linear(startY, endY, p) - Math.sin(p * Math.PI) * arcHeight;
+          arrow.setPosition(ax, ay);
+          const dy = endY - startY - Math.cos(p * Math.PI) * Math.PI * arcHeight;
+          const dx = endX - startX;
+          arrow.setRotation(Math.atan2(dy, dx));
+        },
+        onComplete: () => {
+          arrow.destroy();
+          this.spawnSparkBurst(endX, endY, 0xffffff);
+        },
+      });
+    }
   }
 
   private animateCavalryFlankCharge(
@@ -765,16 +1005,44 @@ export class BattleScene extends Phaser.Scene {
       duration: 240,
       onComplete: () => spark.destroy(),
     });
+
+    // Enhanced multi-spark metallic burst & dust puff in Sidequest Labs Edition
+    if (GameState.getInstance().isSidequestEdition()) {
+      for (let i = 0; i < 6; i++) {
+        const ang = (i / 6) * Math.PI * 2 + Math.random() * 0.5;
+        const dist = 16 + Math.random() * 18;
+        const mote = this.add.rectangle(
+          x,
+          y,
+          3,
+          3,
+          i % 2 === 0 ? SIDEQUEST_PALETTE.GOLD_SPECULAR : tint
+        );
+        this.fxContainer.add(mote);
+        this.tweens.add({
+          targets: mote,
+          x: x + Math.cos(ang) * dist,
+          y: y + Math.sin(ang) * dist,
+          alpha: 0,
+          duration: 260,
+          ease: 'Quad.easeOut',
+          onComplete: () => mote.destroy(),
+        });
+      }
+    }
   }
 
   private spawnCasualtyPopups(
-    losses: { soldiers: number; knights: number; catapults: number },
+    losses: { soldiers: number; knights: number; catapults: number; archers?: number },
     x: number,
     color: string
   ): void {
     const tags: Array<{ text: string; y: number }> = [];
     if (losses.soldiers > 0) {
       tags.push({ text: `-${losses.soldiers}`, y: 274 });
+    }
+    if (losses.archers && losses.archers > 0) {
+      tags.push({ text: `-${losses.archers} ARCHER${losses.archers > 1 ? 'S' : ''}!`, y: 310 });
     }
     if (losses.knights > 0) {
       tags.push({ text: `-${losses.knights} KNIGHT${losses.knights > 1 ? 'S' : ''}!`, y: 236 });
@@ -857,6 +1125,16 @@ export class BattleScene extends Phaser.Scene {
     );
     trimPool(this.attackerCatapultSprites, this.session.attackerArmy.catapults, 1);
     trimPool(this.defenderCatapultSprites, this.session.defenderArmy.catapults, 1);
+    trimPool(
+      this.attackerArcherSprites,
+      this.session.attackerArmy.archers ?? 0,
+      this.archerUnitsPerSpriteAtt
+    );
+    trimPool(
+      this.defenderArcherSprites,
+      this.session.defenderArmy.archers ?? 0,
+      this.archerUnitsPerSpriteDef
+    );
   }
 
   // ============================================================================
@@ -935,6 +1213,7 @@ export class BattleScene extends Phaser.Scene {
     soldiers: Phaser.GameObjects.Text;
     knights: Phaser.GameObjects.Text;
     catapults: Phaser.GameObjects.Text;
+    archers?: Phaser.GameObjects.Text;
     tacticBadge: Phaser.GameObjects.Text;
   } {
     container.removeAll(true);
@@ -997,14 +1276,17 @@ export class BattleScene extends Phaser.Scene {
     }
 
     // Crisp NEAREST Portrait & Heraldic Shield
-    const portraitKey =
-      lordId && this.textures.exists(`portrait_${lordId}`)
-        ? `portrait_${lordId}`
-        : 'portrait_garrison';
-    const shieldKey =
-      lordId && this.textures.exists(`shield_${lordId}`)
-        ? `shield_${lordId}`
-        : 'shield_garrison';
+    const isSidequest = GameState.getInstance().isSidequestEdition();
+    const portraitKey = SidequestArtGenerator.getPortraitKey(
+      this,
+      lordId ?? 'garrison',
+      isSidequest
+    );
+    const shieldKey = SidequestArtGenerator.getShieldKey(
+      this,
+      lordId ?? 'garrison',
+      isSidequest
+    );
 
     const portrait = this.add
       .image(x + 42, y + 78, portraitKey)
@@ -1013,6 +1295,18 @@ export class BattleScene extends Phaser.Scene {
       .image(x + 94, y + 78, shieldKey)
       .setDisplaySize(34, 44);
     container.add([portrait, shield]);
+
+    if (isSidequest) {
+      SidequestArtGenerator.addGleamingFrame(
+        this,
+        container,
+        x + 42,
+        y + 78,
+        60,
+        60,
+        SIDEQUEST_PALETTE.GOLD_GLEAM
+      );
+    }
 
     const shortName = name.length > 21 ? name.slice(0, 20) + '…' : name;
     const nameTxt = this.add.text(x + 118, y + 40, shortName.toUpperCase(), {
@@ -1058,32 +1352,61 @@ export class BattleScene extends Phaser.Scene {
     );
     container.add([nameTxt, leadTxt, tacticBadge]);
 
-    // 3 Live Unit Columns (Soldiers, Knights, Catapults)
+    // Live Unit Columns (Soldiers, [Archers], Knights, Catapults)
+    const hasArchers =
+      isSidequest || (army.archers !== undefined && army.archers > 0);
     const cols: Array<{
       label: string;
       spriteKey: string;
       val: number;
       cx: number;
-    }> = [
-      {
-        label: 'SOLDIERS',
-        spriteKey: `unit_soldier_${theme}_0`,
-        val: army.soldiers,
-        cx: x + 60,
-      },
-      {
-        label: 'KNIGHTS',
-        spriteKey: `unit_knight_${theme}_0`,
-        val: army.knights,
-        cx: x + 165,
-      },
-      {
-        label: 'CATAPULTS',
-        spriteKey: `unit_catapult_${theme}_0`,
-        val: army.catapults,
-        cx: x + 270,
-      },
-    ];
+    }> = hasArchers
+      ? [
+          {
+            label: 'SOLDIERS',
+            spriteKey: `unit_soldier_${theme}_0`,
+            val: army.soldiers,
+            cx: x + 44,
+          },
+          {
+            label: 'ARCHERS',
+            spriteKey: 'sq_unit_archer_0',
+            val: army.archers ?? 0,
+            cx: x + 124,
+          },
+          {
+            label: 'KNIGHTS',
+            spriteKey: `unit_knight_${theme}_0`,
+            val: army.knights,
+            cx: x + 204,
+          },
+          {
+            label: 'CATAPULTS',
+            spriteKey: `unit_catapult_${theme}_0`,
+            val: army.catapults,
+            cx: x + 284,
+          },
+        ]
+      : [
+          {
+            label: 'SOLDIERS',
+            spriteKey: `unit_soldier_${theme}_0`,
+            val: army.soldiers,
+            cx: x + 60,
+          },
+          {
+            label: 'KNIGHTS',
+            spriteKey: `unit_knight_${theme}_0`,
+            val: army.knights,
+            cx: x + 165,
+          },
+          {
+            label: 'CATAPULTS',
+            spriteKey: `unit_catapult_${theme}_0`,
+            val: army.catapults,
+            cx: x + 270,
+          },
+        ];
 
     const refs: Record<string, Phaser.GameObjects.Text> = {};
     for (const c of cols) {
@@ -1117,6 +1440,7 @@ export class BattleScene extends Phaser.Scene {
       soldiers: refs['SOLDIERS'],
       knights: refs['KNIGHTS'],
       catapults: refs['CATAPULTS'],
+      archers: refs['ARCHERS'],
       tacticBadge,
     };
   }
@@ -1144,6 +1468,13 @@ export class BattleScene extends Phaser.Scene {
         this.session.attackerArmy.soldiers,
         report.attackerLosses.soldiers
       );
+      if (this.attCountTexts.archers) {
+        pulseText(
+          this.attCountTexts.archers,
+          this.session.attackerArmy.archers ?? 0,
+          report.attackerLosses.archers ?? 0
+        );
+      }
       pulseText(
         this.attCountTexts.knights,
         this.session.attackerArmy.knights,
@@ -1165,6 +1496,13 @@ export class BattleScene extends Phaser.Scene {
         this.session.defenderArmy.soldiers,
         report.defenderLosses.soldiers
       );
+      if (this.defCountTexts.archers) {
+        pulseText(
+          this.defCountTexts.archers,
+          this.session.defenderArmy.archers ?? 0,
+          report.defenderLosses.archers ?? 0
+        );
+      }
       pulseText(
         this.defCountTexts.knights,
         this.session.defenderArmy.knights,
@@ -1714,5 +2052,84 @@ export class BattleScene extends Phaser.Scene {
         focusTerritoryId,
       });
     });
+  }
+
+  // ============================================================================
+  // SIDEQUEST LABS SEASONAL BATTLEFIELD MIST, DUST & WEATHER FX
+  // ============================================================================
+
+  private initSidequestBattleAtmosphere(season: Season): void {
+    this.battleMistClouds = [
+      { x: 240, y: 215, w: 340, h: 46, speed: 16, alpha: 0.14 },
+      { x: 760, y: 425, w: 410, h: 52, speed: 22, alpha: 0.12 },
+      { x: 1080, y: 255, w: 300, h: 40, speed: 13, alpha: 0.11 },
+    ];
+
+    this.battleWeatherParticles = [];
+    const count = season === 'WINTER' || season === 'AUTUMN' ? 32 : 18;
+    for (let i = 0; i < count; i++) {
+      this.battleWeatherParticles.push({
+        x: (i * 83) % 1260,
+        y: 20 + ((i * 61) % 450),
+        vx: season === 'AUTUMN' ? 28 + (i % 4) * 8 : 14 + (i % 5) * 4,
+        vy:
+          season === 'WINTER'
+            ? 24 + (i % 4) * 6
+            : season === 'AUTUMN'
+            ? 18 + (i % 3) * 6
+            : -6 + (i % 3) * 4,
+        size: i % 3 === 0 ? 4 : 3,
+      });
+    }
+  }
+
+  private updateSidequestBattleAtmosphere(delta: number): void {
+    if (!this.sidequestAtmosphereGraphics) return;
+    const dt = delta / 1000;
+    const g = this.sidequestAtmosphereGraphics;
+    const season = GameState.getInstance().getSeason();
+    g.clear();
+
+    // 1. Drifting Battlefield Mist / Dust Clouds
+    const mistColor =
+      season === 'WINTER'
+        ? SIDEQUEST_PALETTE.WINTER_SNOW
+        : season === 'AUTUMN'
+        ? 0xe5cfa6
+        : 0xd8e4f0;
+
+    for (const m of this.battleMistClouds) {
+      m.x += m.speed * dt;
+      if (m.x - m.w / 2 > 1300) {
+        m.x = -m.w / 2 - 20;
+      }
+      g.fillStyle(mistColor, m.alpha);
+      g.fillEllipse(m.x, m.y, m.w, m.h);
+    }
+
+    // 2. Seasonal Falling Snowflakes (Winter), Russet Leaves (Autumn), or Meadow Motes (Spring/Summer)
+    for (const p of this.battleWeatherParticles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt + Math.sin(this.bobTimer + p.x * 0.02) * 0.35;
+      if (p.x > 1274) p.x = 8;
+      if (p.y > 480) p.y = 12;
+      if (p.y < 10) p.y = 476;
+
+      if (season === 'WINTER') {
+        g.fillStyle(SIDEQUEST_PALETTE.WINTER_SNOW, 0.82);
+        g.fillRect(p.x, p.y, p.size, p.size);
+      } else if (season === 'AUTUMN') {
+        g.fillStyle(
+          p.size > 3
+            ? SIDEQUEST_PALETTE.AUTUMN_AMBER
+            : SIDEQUEST_PALETTE.AUTUMN_RUSSET_MID,
+          0.8
+        );
+        g.fillRect(p.x, p.y, p.size + 1, p.size - 1);
+      } else {
+        g.fillStyle(SIDEQUEST_PALETTE.GOLD_SPECULAR, 0.35);
+        g.fillRect(p.x, p.y, 2, 2);
+      }
+    }
   }
 }

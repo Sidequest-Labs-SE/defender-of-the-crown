@@ -5,6 +5,10 @@
 
 export type Faction = 'saxon' | 'norman';
 
+export type GameEdition = 'CLASSIC' | 'SIDEQUEST_LABS';
+
+export type Season = 'WINTER' | 'SPRING' | 'SUMMER' | 'AUTUMN';
+
 export type GamePhase =
   | 'BOOT'
   | 'TITLE'
@@ -14,9 +18,11 @@ export type GamePhase =
   | 'JOUST'
   | 'RAID'
   | 'RESCUE'
-  | 'SIEGE';
+  | 'SIEGE'
+  | 'ARCHERY'
+  | 'ASSASSIN';
 
-export type SwordplayMissionType = 'RAID' | 'RESCUE';
+export type SwordplayMissionType = 'RAID' | 'RESCUE' | 'ASSASSIN';
 
 export type SwordplayZone = 'HIGH' | 'MID' | 'LOW';
 
@@ -160,16 +166,19 @@ export type BattleOutcomeStatus =
 
 export type VictoryStatus = 'ONGOING' | 'VICTORY' | 'DEFEAT';
 
-export type UnitType = 'soldiers' | 'knights' | 'catapults';
+export type UnitType = 'soldiers' | 'knights' | 'catapults' | 'archers';
 
 /**
- * Strict 1986 Cinemaware Unit & Fortification Prices
+ * Strict 1986 Cinemaware Unit & Fortification Prices + Sprint 8 Sidequest Expansion
  */
 export const UNIT_COSTS = {
   soldiers: 1,
   knights: 8,
   catapults: 15,
   castle: 20,
+  archers: 4,
+  market: 12,
+  royalKeep: 30,
 } as const;
 
 export const ROBIN_HOOD_MERRY_MEN_COUNT = 12;
@@ -193,6 +202,7 @@ export interface Army {
   soldiers: number;
   knights: number;
   catapults: number;
+  archers?: number;
 }
 
 export interface LordStats {
@@ -226,6 +236,9 @@ export interface Lord {
   bio: string;
   historicalQuote: string;
   heraldry: LordHeraldry;
+  pactWithPlayerTurns?: number;
+  relicIds?: string[];
+  hasVendettaAgainstPlayer?: boolean;
 }
 
 export interface MapPoint {
@@ -245,9 +258,13 @@ export interface Territory {
   neighbors: string[];
   mapCoords: MapPoint;
   polygon?: MapPoint[];
+  hasMarket?: boolean;
+  isRoyalKeep?: boolean;
+  sabotagedWallDamage?: number;
 }
 
 export interface CampaignState {
+  edition: GameEdition;     // 'CLASSIC' | 'SIDEQUEST_LABS'
   year: number;             // 1149
   month: number;            // 1 (January)
   turn: number;             // 1
@@ -266,6 +283,78 @@ export interface CampaignState {
   victoryStatus: VictoryStatus;
   winnerLordId: string | null;
   log: string[];
+  royalRansomPaid?: number;
+  playerFaction?: Faction;
+  spiedTurnsRemaining?: number;
+  saboteurSentThisTurn?: boolean;
+  mercenariesHiredThisTurn?: boolean;
+  nemesisLordId?: string | null;
+  archeryContestHeldThisTurn?: boolean;
+  lastSeasonalEvent?: string | null;
+  lastSeasonalEventMonth?: number;
+  pendingAssassinMission?: boolean;
+}
+
+export type ArcheryHitZone =
+  | 'ROBIN_HOOD_SPLIT'
+  | 'GOLD_BULLSEYE'
+  | 'RED_INNER'
+  | 'BLUE_OUTER'
+  | 'WHITE_EDGE'
+  | 'MISS';
+
+export interface ArcheryShotResult {
+  shotIndex: number;
+  roundNumber: number;
+  aimX: number;
+  aimY: number;
+  wind: number;
+  finalX: number;
+  finalY: number;
+  radius: number;
+  hitZone: ArcheryHitZone;
+  points: number;
+  isSplit: boolean;
+  commentary: string;
+}
+
+export interface ArcheryRound {
+  roundNumber: number;
+  distancePaces: 50 | 80;
+  wind: number;
+  playerShots: ArcheryShotResult[];
+  rivalShots: ArcheryShotResult[];
+}
+
+export interface ArcherySession {
+  playerLordId: string;
+  playerName: string;
+  rivalLordId: string;
+  rivalName: string;
+  currentRound: number; // 1 or 2
+  currentRoundIndex?: number; // 0 or 1
+  shotsPerRound: number; // 3
+  currentShotInRound: number; // 1..3
+  playerScore: number;
+  playerTotalScore?: number;
+  rivalScore: number;
+  rivalTotalScore?: number;
+  rounds: ArcheryRound[];
+  status: 'ACTIVE' | 'PLAYER_WON' | 'RIVAL_WON' | 'DRAW';
+  hasSplitTarget: boolean;
+  deterministic: boolean;
+  rngState: number;
+}
+
+export interface ArcheryTournamentResult {
+  playerWon: boolean;
+  playerScore: number;
+  rivalScore: number;
+  goldAwarded: number;
+  archersAwarded: number;
+  relicAwarded?: string;
+  headline: string;
+  chronicleMessage: string;
 }
 
 export interface ActionResult {
@@ -360,4 +449,35 @@ export function getCinemawareStatRating(stat: number): string {
   if (stat <= 7) return 'Good';
   if (stat <= 9) return 'Best';
   return 'Legendary';
+}
+
+/**
+ * Computes the meteorological medieval season for a 1-based calendar month (1 = JAN .. 12 = DEC).
+ * - WINTER: Dec (12), Jan (1), Feb (2)
+ * - SPRING: Mar (3), Apr (4), May (5)
+ * - SUMMER: Jun (6), Jul (7), Aug (8)
+ * - AUTUMN: Sep (9), Oct (10), Nov (11)
+ */
+export function getSeasonForMonth(month: number): Season {
+  const m = (((month - 1) % 12) + 12) % 12 + 1;
+  if (m === 12 || m === 1 || m === 2) return 'WINTER';
+  if (m >= 3 && m <= 5) return 'SPRING';
+  if (m >= 6 && m <= 8) return 'SUMMER';
+  return 'AUTUMN';
+}
+
+/**
+ * Returns the formatted Season HUD badge label for Sidequest Labs Edition.
+ */
+export function getSeasonBadgeLabel(season: Season): string {
+  switch (season) {
+    case 'WINTER':
+      return '❄ WINTER';
+    case 'SPRING':
+      return '🌱 SPRING';
+    case 'SUMMER':
+      return '☀ SUMMER';
+    case 'AUTUMN':
+      return '🍂 AUTUMN';
+  }
 }

@@ -8,9 +8,10 @@ import {
 } from '../core/JoustEngine';
 import { GameState } from '../core/GameState';
 import { Lord, getCinemawareStatRating } from '../core/types';
-import { PALETTE, PALETTE_HEX } from '../data/palette';
+import { PALETTE, PALETTE_HEX, SIDEQUEST_PALETTE } from '../data/palette';
 import { AudioManager } from '../utils/AudioManager';
 import { PixelArtGenerator } from '../utils/PixelArtGenerator';
+import { SidequestArtGenerator } from '../utils/SidequestArtGenerator';
 
 export interface JoustSceneData {
   joustContext?: PendingJoustContext;
@@ -65,6 +66,12 @@ export class JoustScene extends Phaser.Scene {
   private splinterParticlesContainer!: Phaser.GameObjects.Container;
   private unhorseTumbleSprite?: Phaser.GameObjects.Image;
 
+  // Sidequest Labs Edition Atmospheric & Tournament Visual State
+  private isSidequest = false;
+  private sidequestPennantsGraphics?: Phaser.GameObjects.Graphics;
+  private sidequestTurfContainer?: Phaser.GameObjects.Container;
+  private turfClodTimerMs = 0;
+
   // Bottom Command Deck HUD Elements
   private deckContainer!: Phaser.GameObjects.Container;
   private challengerScoreText!: Phaser.GameObjects.Text;
@@ -80,6 +87,10 @@ export class JoustScene extends Phaser.Scene {
   create(data?: JoustSceneData): void {
     PixelArtGenerator.generateAll(this);
     const gameState = GameState.getInstance();
+    this.isSidequest = gameState.isSidequestEdition();
+    if (this.isSidequest) {
+      SidequestArtGenerator.generateAll(this);
+    }
 
     if (data?.joustContext) {
       this.context = data.joustContext;
@@ -178,8 +189,17 @@ export class JoustScene extends Phaser.Scene {
     this.arenaContainer = this.add.container(0, 0);
 
     // 1. Full Arena Backdrop
-    const backdrop = this.add.image(0, 0, 'joust_arena_backdrop').setOrigin(0, 0);
+    const backdropKey = this.isSidequest ? 'sq_joust_arena_backdrop' : 'joust_arena_backdrop';
+    const backdrop = this.add.image(0, 0, backdropKey).setOrigin(0, 0);
     this.arenaContainer.add(backdrop);
+
+    if (this.isSidequest) {
+      this.sidequestPennantsGraphics = this.add.graphics();
+      this.arenaContainer.add(this.sidequestPennantsGraphics);
+      this.sidequestTurfContainer = this.add.container(0, 0);
+      this.arenaContainer.add(this.sidequestTurfContainer);
+      this.turfClodTimerMs = 0;
+    }
 
     // 2. Splinter particle container (depth 12)
     this.splinterParticlesContainer = this.add.container(0, 0);
@@ -187,8 +207,9 @@ export class JoustScene extends Phaser.Scene {
 
     // 3. Oncoming Rival Charger Sprite (starts distant, approaches along tilt rail)
     // Starting perspective: (x: 652, y: 216, scale: 0.22)
+    const rivalChargerKey = this.isSidequest ? 'sq_joust_rival_charger' : 'joust_rival_charger';
     this.rivalChargerSprite = this.add
-      .image(652, 216, 'joust_rival_charger')
+      .image(652, 216, rivalChargerKey)
       .setOrigin(0.5, 0.75)
       .setScale(0.22);
     this.arenaContainer.add(this.rivalChargerSprite);
@@ -203,15 +224,17 @@ export class JoustScene extends Phaser.Scene {
     this.arenaContainer.add(this.targetShieldOverlay);
 
     // 5. Player's Warhorse Neck & Bridle (Foreground lower-left)
+    const horseNeckKey = this.isSidequest ? 'sq_joust_horse_neck' : 'joust_horse_neck';
     this.playerHorseNeckSprite = this.add
-      .image(175, 435, 'joust_horse_neck')
+      .image(175, 435, horseNeckKey)
       .setOrigin(0.5, 0.8)
       .setScale(1.6);
     this.arenaContainer.add(this.playerHorseNeckSprite);
 
     // 6. Player's Couched Tournament Lance (Foreground lower-right pointing inward)
+    const lanceKey = this.isSidequest ? 'sq_joust_player_lance' : 'joust_player_lance';
     this.playerLanceSprite = this.add
-      .image(740, 480, 'joust_player_lance')
+      .image(740, 480, lanceKey)
       .setOrigin(0.85, 0.85)
       .setScale(1.5);
     this.arenaContainer.add(this.playerLanceSprite);
@@ -252,16 +275,35 @@ export class JoustScene extends Phaser.Scene {
     this.deckContainer.add(bg);
 
     // A. Challenger Card (Left)
-    const chalPortraitKey = `portrait_${this.challenger.id}`;
+    const chalPortraitKey = SidequestArtGenerator.getPortraitKey(
+      this,
+      this.challenger.id,
+      this.isSidequest
+    );
     if (this.textures.exists(chalPortraitKey)) {
       const chalPortrait = this.add
         .image(68, 80, chalPortraitKey)
         .setDisplaySize(68, 68)
         .setOrigin(0.5);
       this.deckContainer.add(chalPortrait);
+      if (this.isSidequest) {
+        SidequestArtGenerator.addGleamingFrame(
+          this,
+          this.deckContainer,
+          68,
+          80,
+          68,
+          68,
+          SIDEQUEST_PALETTE.GOLD_GLEAM
+        );
+      }
     }
 
-    const chalShieldKey = `shield_${this.challenger.id}`;
+    const chalShieldKey = SidequestArtGenerator.getShieldKey(
+      this,
+      this.challenger.id,
+      this.isSidequest
+    );
     if (this.textures.exists(chalShieldKey)) {
       const chalShield = this.add
         .image(124, 96, chalShieldKey)
@@ -393,16 +435,35 @@ export class JoustScene extends Phaser.Scene {
     ]);
 
     // C. Rival Card (Right)
-    const rivalPortraitKey = `portrait_${this.rival.id}`;
+    const rivalPortraitKey = SidequestArtGenerator.getPortraitKey(
+      this,
+      this.rival.id,
+      this.isSidequest
+    );
     if (this.textures.exists(rivalPortraitKey)) {
       const rivalPortrait = this.add
         .image(968, 80, rivalPortraitKey)
         .setDisplaySize(68, 68)
         .setOrigin(0.5);
       this.deckContainer.add(rivalPortrait);
+      if (this.isSidequest) {
+        SidequestArtGenerator.addGleamingFrame(
+          this,
+          this.deckContainer,
+          968,
+          80,
+          68,
+          68,
+          SIDEQUEST_PALETTE.CRIMSON_BRIGHT
+        );
+      }
     }
 
-    const rivalShieldKey = `shield_${this.rival.id}`;
+    const rivalShieldKey = SidequestArtGenerator.getShieldKey(
+      this,
+      this.rival.id,
+      this.isSidequest
+    );
     if (this.textures.exists(rivalShieldKey)) {
       const rivalShield = this.add
         .image(1024, 96, rivalShieldKey)
@@ -615,6 +676,10 @@ export class JoustScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    if (this.isSidequest) {
+      this.updateSidequestGrandstandPennants(_time);
+    }
+
     if (!this.isCharging || this.isImpactResolved || this.isModalOpen) {
       return;
     }
@@ -672,6 +737,16 @@ export class JoustScene extends Phaser.Scene {
     // Warhorse Head & Neck Gallop Bobbing
     const bobOffset = Math.sin(timeSec * 16) * 8;
     this.playerHorseNeckSprite.setPosition(175, 435 + bobOffset);
+
+    // Sidequest Labs Edition: Dramatic turf-clod & arena-dust particles kicked up by charging warhorses
+    if (this.isSidequest) {
+      this.turfClodTimerMs += delta;
+      const clodInterval = Phaser.Math.Linear(135, 70, progress);
+      if (this.turfClodTimerMs >= clodInterval) {
+        this.turfClodTimerMs = 0;
+        this.spawnSidequestTurfClods(rivalX, rivalY, rivalScale, progress);
+      }
+    }
 
     // 5. Final Precision Reticle & Target Shield Overlay Phase (progress >= 0.70)
     // Shield center on rival is roughly:
@@ -931,12 +1006,12 @@ export class JoustScene extends Phaser.Scene {
     modalContainer.add(header);
 
     // Heraldic Shields in modal
-    const chalKey = `shield_${this.challenger.id}`;
+    const chalKey = SidequestArtGenerator.getShieldKey(this, this.challenger.id, this.isSidequest);
     if (this.textures.exists(chalKey)) {
       const cs = this.add.image(-220, -110, chalKey).setDisplaySize(48, 60);
       modalContainer.add(cs);
     }
-    const rivalKey = `shield_${this.rival.id}`;
+    const rivalKey = SidequestArtGenerator.getShieldKey(this, this.rival.id, this.isSidequest);
     if (this.textures.exists(rivalKey)) {
       const rs = this.add.image(220, -110, rivalKey).setDisplaySize(48, 60);
       modalContainer.add(rs);
@@ -1092,6 +1167,146 @@ export class JoustScene extends Phaser.Scene {
       this.input.keyboard.once('keydown-ENTER', commitAndReturn);
       this.input.keyboard.once('keydown-SPACE', commitAndReturn);
     }
+  }
+
+  /**
+   * Sidequest Labs Edition: Animates fluttering heraldic pennants atop the tournament grandstands & Royal Box.
+   */
+  private updateSidequestGrandstandPennants(timeMs: number): void {
+    if (!this.sidequestPennantsGraphics) return;
+    const g = this.sidequestPennantsGraphics;
+    g.clear();
+
+    const pennantColors = [
+      SIDEQUEST_PALETTE.CRIMSON_BRIGHT,
+      SIDEQUEST_PALETTE.GOLD_GLEAM,
+      SIDEQUEST_PALETTE.AZURE_BRIGHT,
+      SIDEQUEST_PALETTE.EMERALD_HIGHLIGHT,
+      SIDEQUEST_PALETTE.PURPLE_REGAL_LIGHT,
+    ];
+
+    const poles = [
+      { x: 110, y: 122, len: 30, royal: false },
+      { x: 245, y: 122, len: 28, royal: false },
+      { x: 380, y: 122, len: 30, royal: false },
+      { x: 515, y: 122, len: 28, royal: false },
+      { x: 582, y: 106, len: 36, royal: true },
+      { x: 698, y: 106, len: 36, royal: true },
+      { x: 790, y: 122, len: 30, royal: false },
+      { x: 925, y: 122, len: 28, royal: false },
+      { x: 1060, y: 122, len: 30, royal: false },
+      { x: 1175, y: 122, len: 28, royal: false },
+    ];
+
+    const t = timeMs * 0.0065;
+    poles.forEach((pole, idx) => {
+      // Mast & golden finial
+      g.fillStyle(SIDEQUEST_PALETTE.OAK_SHADOW, 1);
+      g.fillRect(pole.x - 1, pole.y - 26, 3, 28);
+      g.fillStyle(SIDEQUEST_PALETTE.GOLD_SPECULAR, 1);
+      g.fillCircle(pole.x, pole.y - 27, 2.5);
+
+      // Multi-segment fluttering swallowtail pennant
+      const color = pole.royal
+        ? SIDEQUEST_PALETTE.GOLD_GLEAM
+        : pennantColors[idx % pennantColors.length];
+      const wave1 = Math.sin(t + idx * 0.9) * 3.2;
+      const wave2 = Math.cos(t * 1.35 + idx * 1.1) * 5.2;
+      const topY = pole.y - 25;
+      const midX = pole.x + pole.len * 0.55;
+      const tipX = pole.x + pole.len;
+
+      g.fillStyle(color, 0.96);
+      g.beginPath();
+      g.moveTo(pole.x + 2, topY);
+      g.lineTo(midX, topY + 2 + wave1);
+      g.lineTo(tipX, topY + 3 + wave2);
+      g.lineTo(tipX - 6, topY + 7 + wave2 * 0.9);
+      g.lineTo(tipX, topY + 11 + wave2);
+      g.lineTo(midX, topY + 11 + wave1);
+      g.lineTo(pole.x + 2, topY + 12);
+      g.closePath();
+      g.fillPath();
+
+      // Trim stripe on Royal Box pennants
+      if (pole.royal) {
+        g.lineStyle(1.2, SIDEQUEST_PALETTE.CRIMSON_BRIGHT, 0.9);
+        g.beginPath();
+        g.moveTo(pole.x + 3, topY + 6);
+        g.lineTo(midX, topY + 6.5 + wave1);
+        g.lineTo(tipX - 6, topY + 7 + wave2 * 0.9);
+        g.strokePath();
+      }
+    });
+  }
+
+  /**
+   * Sidequest Labs Edition: Spawns flying turf clods & sand dust kicked up by both charging warhorses.
+   */
+  private spawnSidequestTurfClods(
+    rivalX: number,
+    rivalY: number,
+    rivalScale: number,
+    progress: number
+  ): void {
+    if (!this.sidequestTurfContainer) return;
+
+    // 1. Rival warhorse hooves kicking up turf clods & sand puffs
+    const hoofBaseX = rivalX + (Math.random() - 0.5) * 28 * rivalScale;
+    const hoofBaseY = rivalY + 42 * rivalScale;
+    const rivalClodCount = progress > 0.45 ? 3 : 2;
+
+    for (let i = 0; i < rivalClodCount; i++) {
+      const clod = this.add.graphics();
+      const isGrass = i % 2 === 0;
+      const sz = Math.max(2, (2.5 + Math.random() * 3.5) * Math.min(1.25, rivalScale + 0.35));
+      clod.fillStyle(
+        isGrass ? SIDEQUEST_PALETTE.SPRING_MEADOW_DARK : SIDEQUEST_PALETTE.OAK_SHADOW,
+        0.92
+      );
+      clod.fillRect(-sz / 2, -sz / 2, sz, sz * 0.78);
+      if (isGrass) {
+        clod.fillStyle(SIDEQUEST_PALETTE.SPRING_MEADOW_BRIGHT, 0.85);
+        clod.fillRect(-sz / 2, -sz / 2, sz, Math.max(1, sz * 0.32));
+      }
+      clod.setPosition(hoofBaseX, hoofBaseY);
+      this.sidequestTurfContainer.add(clod);
+
+      const vx = (Math.random() - 0.35) * 65 * rivalScale;
+      const vy = -(18 + Math.random() * 34) * Math.max(0.5, rivalScale);
+      this.tweens.add({
+        targets: clod,
+        x: hoofBaseX + vx,
+        y: hoofBaseY + vy + 22,
+        angle: (Math.random() - 0.5) * 220,
+        alpha: { from: 0.95, to: 0 },
+        duration: 420 + Math.random() * 220,
+        ease: 'Quad.easeOut',
+        onComplete: () => clod.destroy(),
+      });
+    }
+
+    // 2. Player foreground destrier kicking dramatic turf clods & sand plume along lower arena edge
+    const fgX = 240 + Math.random() * 140;
+    const fgY = 496 + Math.random() * 10;
+    const fgClod = this.add.graphics();
+    fgClod.fillStyle(SIDEQUEST_PALETTE.OAK_SHADOW, 0.9);
+    fgClod.fillRect(-4, -3, 8, 6);
+    fgClod.fillStyle(SIDEQUEST_PALETTE.SPRING_MEADOW_BRIGHT, 0.85);
+    fgClod.fillRect(-4, -3, 8, 2);
+    fgClod.setPosition(fgX, fgY);
+    this.sidequestTurfContainer.add(fgClod);
+
+    this.tweens.add({
+      targets: fgClod,
+      x: fgX - 55 - Math.random() * 55,
+      y: fgY - 26 - Math.random() * 28,
+      angle: -140 - Math.random() * 120,
+      alpha: { from: 0.95, to: 0 },
+      duration: 460 + Math.random() * 180,
+      ease: 'Cubic.easeOut',
+      onComplete: () => fgClod.destroy(),
+    });
   }
 
   private toggleAudio(): void {

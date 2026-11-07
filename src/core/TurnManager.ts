@@ -223,6 +223,70 @@ export class TurnManager {
       turnEvents.push(tournMsg);
     }
 
+    // 7. Sidequest Labs Seasonal Chronicle Events & Nemesis Night Assassins
+    if (this.gameState.isSidequestEdition()) {
+      this.gameState.mutateState((s) => {
+        if (s.victoryStatus !== 'ONGOING') return;
+        const m = calendar.month;
+        const pLord = s.activeLords[s.selectedLordId];
+
+        if (
+          (m === 3 || m === 6 || m === 9 || m === 12) &&
+          s.lastSeasonalEventMonth !== m
+        ) {
+          s.lastSeasonalEventMonth = m;
+          if (m === 3) {
+            pLord.gold += 5;
+            const homeT = s.territories[pLord.homeTerritoryId];
+            if (homeT) {
+              homeT.garrison.soldiers += 3;
+            }
+            s.lastSeasonalEvent = 'Vernal Equinox & Wool Trade Tariffs';
+            const msg = `[SEASONAL PROCLAMATION] Vernal Equinox & Wool Trade Tariffs: +5 Gold trade duty & +3 Home Garrison recruits!`;
+            s.log.push(msg);
+            turnEvents.push(msg);
+          } else if (m === 6) {
+            pLord.campaignArmy.knights += 1;
+            s.lastSeasonalEvent = 'Midsummer Fair & Grand Lists';
+            const msg = `[SEASONAL PROCLAMATION] Midsummer Fair & Grand Lists: +1 Knight rallied to the banner & lists proclaimed!`;
+            s.log.push(msg);
+            turnEvents.push(msg);
+          } else if (m === 9) {
+            s.lastSeasonalEvent = 'Autumn Harvest & Golden Bounties';
+            const msg = `[SEASONAL PROCLAMATION] Autumn Harvest & Golden Bounties: Markets yield double prosperity (+4G each)!`;
+            s.log.push(msg);
+            turnEvents.push(msg);
+          } else if (m === 12) {
+            const northIds = ['northumberland', 'cumberland', 'lancashire', 'yorkshire'];
+            for (const l of Object.values(s.activeLords)) {
+              if (
+                !l.isDefeated &&
+                northIds.includes(l.currentTerritoryId) &&
+                l.campaignArmy.soldiers > 1
+              ) {
+                l.campaignArmy.soldiers -= 1;
+              }
+            }
+            s.lastSeasonalEvent = 'The Great Frost & Ice Storms';
+            const msg = `[SEASONAL PROCLAMATION] The Great Frost & Ice Storms: Winter frostbite grips northern campaign armies (-1 Soldier)!`;
+            s.log.push(msg);
+            turnEvents.push(msg);
+          }
+        }
+
+        if (s.nemesisLordId && !s.pendingAssassinMission) {
+          const nemesis = s.activeLords[s.nemesisLordId];
+          if (nemesis && !nemesis.isDefeated && nemesis.gold >= 10) {
+            nemesis.gold -= 10;
+            s.pendingAssassinMission = true;
+            const assassinMsg = `[SHADOW OF VENGEANCE] ${nemesis.name} has dispatched a Night Assassin to strike thee down in thy keep!`;
+            s.log.push(assassinMsg);
+            turnEvents.push(assassinMsg);
+          }
+        }
+      });
+    }
+
     return {
       year: calendar.year,
       month: calendar.month,
@@ -273,6 +337,9 @@ export class TurnManager {
 
     // Step B: Tactical Movement / Expansion / Invasion
     const reachable = this.gameState.getReachableTerritories(lordId);
+    const hasPactWithPlayer = Boolean(
+      updatedLord.pactWithPlayerTurns && updatedLord.pactWithPlayerTurns > 0
+    );
 
     // 1. Check for vulnerable enemy Home Castles we can storm right now
     const attackableEnemies = reachable.enemyIds
@@ -285,17 +352,22 @@ export class TurnManager {
         const requiredMargin = isOppositeFaction ? 1.15 : isEnemyHome ? 1.75 : 1.35;
         return { tid, terr, preview, isEnemyHome, isOppositeFaction, requiredMargin };
       })
-      .filter(
-        (cand) =>
+      .filter((cand) => {
+        if (hasPactWithPlayer && cand.terr.ownerId === stateMid.selectedLordId) {
+          return false;
+        }
+        return (
           cand.preview.allowed &&
           cand.preview.attackerStrength >
             cand.preview.defenderStrength * cand.requiredMargin
-      );
+        );
+      });
 
     const vulnerableHomeCastle = attackableEnemies.find(
       (c) =>
         c.isEnemyHome &&
         c.isOppositeFaction &&
+        (!hasPactWithPlayer || c.terr.ownerId !== stateMid.selectedLordId) &&
         c.preview.attackerStrength > c.preview.defenderStrength * 1.25
     );
 
@@ -303,6 +375,25 @@ export class TurnManager {
       return this.gameState.moveCampaignArmy(lordId, vulnerableHomeCastle.tid, {
         interactiveBattle,
       });
+    }
+
+    // In SIDEQUEST_LABS mode, Nemesis AI prioritizes striking player borderlands
+    if (this.gameState.isSidequestEdition() && updatedLord.hasVendettaAgainstPlayer) {
+      const playerTargets = attackableEnemies.filter(
+        (c) => c.terr.ownerId === stateMid.selectedLordId
+      );
+      if (playerTargets.length > 0) {
+        playerTargets.sort((a, b) => {
+          const ratioA =
+            a.preview.attackerStrength / Math.max(1, a.preview.defenderStrength);
+          const ratioB =
+            b.preview.attackerStrength / Math.max(1, b.preview.defenderStrength);
+          return ratioB - ratioA;
+        });
+        return this.gameState.moveCampaignArmy(lordId, playerTargets[0].tid, {
+          interactiveBattle,
+        });
+      }
     }
 
     // 2. Claim highest-value adjacent Neutral territory
@@ -428,6 +519,25 @@ export class TurnManager {
       );
       if (!res.success) break;
       spendableGold -= UNIT_COSTS.knights;
+    }
+
+    // In SIDEQUEST_LABS mode, recruit Longbowmen (archers) if affordable
+    if (this.gameState.isSidequestEdition() && spendableGold >= UNIT_COSTS.archers) {
+      const currentArchers = currentLord.campaignArmy.archers ?? 0;
+      if (currentArchers < Math.floor(currentLord.campaignArmy.soldiers / 3) + 2) {
+        const archersToBuy = Math.min(2, Math.floor(spendableGold / UNIT_COSTS.archers));
+        if (archersToBuy > 0) {
+          const res = this.gameState.purchaseUnit(
+            currentLord.id,
+            'archers',
+            archersToBuy,
+            'campaign'
+          );
+          if (res.success) {
+            spendableGold -= archersToBuy * UNIT_COSTS.archers;
+          }
+        }
+      }
     }
 
     // Spend remaining budget on Soldiers (1G)

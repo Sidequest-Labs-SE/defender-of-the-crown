@@ -13,8 +13,9 @@ import {
   PendingSwordplayContext,
   SwordplayAction,
 } from '../core/types';
-import { PALETTE, PALETTE_HEX } from '../data/palette';
+import { PALETTE, PALETTE_HEX, SIDEQUEST_PALETTE } from '../data/palette';
 import { PixelArtGenerator } from '../utils/PixelArtGenerator';
+import { SidequestArtGenerator } from '../utils/SidequestArtGenerator';
 
 export interface SwordplaySceneData {
   swordplayContext?: PendingSwordplayContext;
@@ -49,6 +50,14 @@ export class SwordplayScene extends Phaser.Scene {
 
   // Top Castle Arena Layers (0..1280 x 0..500)
   private torchGlowGraphics!: Phaser.GameObjects.Graphics;
+  private sidequestMoonbeamGraphics?: Phaser.GameObjects.Graphics;
+  private dustMotes: Array<{
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    phase: number;
+  }> = [];
   private roomPropsContainer!: Phaser.GameObjects.Container;
   private wallShadowsContainer!: Phaser.GameObjects.Container;
   private floorShadowGraphics!: Phaser.GameObjects.Graphics;
@@ -88,6 +97,7 @@ export class SwordplayScene extends Phaser.Scene {
 
   create(data?: SwordplaySceneData): void {
     PixelArtGenerator.generateAll(this);
+    SidequestArtGenerator.generateAll(this);
 
     const gameState = GameState.getInstance();
     let state = gameState.getState();
@@ -160,6 +170,9 @@ export class SwordplayScene extends Phaser.Scene {
 
     // 1. Live Flickering Wall Sconces, Warm Light Halos & Drifting Embers
     this.drawFlickeringTorches();
+    if (GameState.getInstance().isSidequestEdition()) {
+      this.updateSidequestMoonlightAndDust(delta);
+    }
     if (this.emberTimerMs >= 210) {
       this.emberTimerMs = 0;
       this.spawnTorchEmber();
@@ -234,7 +247,32 @@ export class SwordplayScene extends Phaser.Scene {
   // ==========================================================================
 
   private createTopCastleArena(): void {
-    this.add.image(0, 0, 'swordplay_hall_backdrop').setOrigin(0, 0).setDepth(1);
+    const isSidequest = GameState.getInstance().isSidequestEdition();
+    const bgKey =
+      isSidequest && this.textures.exists('sq_swordplay_hall_backdrop')
+        ? 'sq_swordplay_hall_backdrop'
+        : 'swordplay_hall_backdrop';
+    this.add.image(0, 0, bgKey).setOrigin(0, 0).setDepth(1);
+
+    if (isSidequest) {
+      this.sidequestMoonbeamGraphics = this.add.graphics().setDepth(6);
+      const maskShape = this.make.graphics({ x: 0, y: 0 });
+      maskShape.fillStyle(0xffffff, 1);
+      maskShape.fillRect(5, 5, 1270, 490);
+      this.sidequestMoonbeamGraphics.setMask(maskShape.createGeometryMask());
+      this.dustMotes = [];
+      const lancetCenters = [340, 640, 915];
+      for (let i = 0; i < 30; i++) {
+        const lx = lancetCenters[i % 3];
+        this.dustMotes.push({
+          x: lx + ((i * 23) % 90) - 20,
+          y: 110 + ((i * 47) % 290),
+          vx: 5 + (i % 4) * 2.2,
+          vy: -4 + (i % 5) * 2,
+          phase: i * 0.85,
+        });
+      }
+    }
 
     // Dramatic Wall Shadows Layer (Cast onto stone masonry behind props & duelists!)
     this.wallShadowsContainer = this.add.container(0, 0).setDepth(8);
@@ -377,10 +415,12 @@ export class SwordplayScene extends Phaser.Scene {
       targetLord?.heraldry.primaryColor ??
       (this.session.enemy.faction === 'norman' ? PALETTE.BLOOD_RED : PALETTE.FOLIAGE_MID);
     const bannerTrim = targetLord?.heraldry.secondaryColor ?? PALETTE.GOLD_BRIGHT;
-    const shieldKey =
-      targetLord && this.textures.exists(`shield_${targetLord.id}`)
-        ? `shield_${targetLord.id}`
-        : 'shield_garrison';
+    const isSidequest = GameState.getInstance().isSidequestEdition();
+    const shieldKey = SidequestArtGenerator.getShieldKey(
+      this,
+      targetLord?.id ?? 'garrison',
+      isSidequest
+    );
 
     // Heraldic Tapestries on Castle Columns
     const tapestryXs =
@@ -459,6 +499,7 @@ export class SwordplayScene extends Phaser.Scene {
 
   private drawFlickeringTorches(): void {
     this.torchGlowGraphics.clear();
+    const isSidequest = GameState.getInstance().isSidequestEdition();
     const sconceXs = [235, 535, 745, 995];
 
     sconceXs.forEach((tx, idx) => {
@@ -466,9 +507,22 @@ export class SwordplayScene extends Phaser.Scene {
       const flicker =
         Math.sin(this.envTimer * 3.1 + idx * 1.7) * 0.5 +
         Math.cos(this.envTimer * 5.4 + idx * 2.3) * 0.5;
-      const haloR = 68 + flicker * 7;
+      const haloR = (isSidequest ? 96 : 68) + flicker * (isSidequest ? 11 : 7);
 
       // Soft warm multi-layered torchlight halo
+      if (isSidequest) {
+        this.torchGlowGraphics.fillStyle(
+          SIDEQUEST_PALETTE.TORCH_ORANGE,
+          0.06 + flicker * 0.018
+        );
+        this.torchGlowGraphics.fillCircle(tx, ty - 10, haloR * 1.28);
+        // Warm torchlight pool cast onto flagstones below
+        this.torchGlowGraphics.fillStyle(
+          SIDEQUEST_PALETTE.TORCH_AMBER,
+          0.06 + flicker * 0.015
+        );
+        this.torchGlowGraphics.fillEllipse(tx, 418, 128 + flicker * 10, 22);
+      }
       this.torchGlowGraphics.fillStyle(0xff7b1c, 0.07 + flicker * 0.015);
       this.torchGlowGraphics.fillCircle(tx, ty - 10, haloR);
       this.torchGlowGraphics.fillStyle(PALETTE.GOLD_BRIGHT, 0.13 + flicker * 0.02);
@@ -805,13 +859,30 @@ export class SwordplayScene extends Phaser.Scene {
     g.fillRoundedRect(x + 8, y + 8, w - 16, h - 16, 4);
     container.add(g);
 
-    const portraitKey = this.textures.exists(duelist.portraitKey)
-      ? duelist.portraitKey
-      : 'portrait_garrison';
+    const isSidequest = GameState.getInstance().isSidequestEdition();
+    const portraitKey = SidequestArtGenerator.getPortraitKey(
+      this,
+      duelist.portraitKey,
+      isSidequest
+    );
     const portrait = this.add
       .image(x + 48, y + 48, portraitKey)
       .setDisplaySize(60, 60);
     container.add(portrait);
+
+    if (isSidequest) {
+      SidequestArtGenerator.addGleamingFrame(
+        this,
+        container,
+        x + 48,
+        y + 48,
+        60,
+        60,
+        isPlayer && duelist.riposteReady
+          ? SIDEQUEST_PALETTE.GOLD_SPECULAR
+          : SIDEQUEST_PALETTE.GOLD_GLEAM
+      );
+    }
 
     const roleTag = isPlayer
       ? this.session.missionType === 'RESCUE'
@@ -1385,12 +1456,18 @@ export class SwordplayScene extends Phaser.Scene {
         : 362;
 
     if (report.outcome !== 'PLAYER_RECOVERED') {
+      const isParryOrRiposte =
+        report.riposteTriggered ||
+        report.outcome === 'PLAYER_PARRY_SUCCESS' ||
+        report.outcome === 'ENEMY_PARRY' ||
+        report.outcome === 'PLAYER_RIPOSTE_HIT';
       this.spawnSteelSparks(
         clashX,
         clashY,
         report.riposteTriggered || report.outcome === 'PLAYER_PARRY_SUCCESS'
           ? 10
-          : 6
+          : 6,
+        isParryOrRiposte
       );
       if (
         report.riposteTriggered ||
@@ -1479,15 +1556,32 @@ export class SwordplayScene extends Phaser.Scene {
     return 'EN_GARDE';
   }
 
-  private spawnSteelSparks(x: number, y: number, count: number): void {
-    for (let i = 0; i < count; i++) {
+  private spawnSteelSparks(
+    x: number,
+    y: number,
+    count: number,
+    isParryOrRiposte = false
+  ): void {
+    const isSidequest = GameState.getInstance().isSidequestEdition();
+    const totalCount =
+      isSidequest && isParryOrRiposte ? Math.round(count * 1.8) : count;
+
+    for (let i = 0; i < totalCount; i++) {
       const spark = this.add
         .image(x, y, 'fx_steel_spark')
         .setScale(Phaser.Math.FloatBetween(0.75, 1.35));
       this.clashFxContainer.add(spark);
 
       const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-      const speed = Phaser.Math.Between(28, 78);
+      const speed =
+        isSidequest && isParryOrRiposte
+          ? Phaser.Math.Between(52, 132)
+          : Phaser.Math.Between(28, 78);
+      const dur =
+        isSidequest && isParryOrRiposte
+          ? Phaser.Math.Between(420, 680)
+          : Phaser.Math.Between(260, 440);
+
       this.tweens.add({
         targets: spark,
         x: x + Math.cos(angle) * speed,
@@ -1495,9 +1589,35 @@ export class SwordplayScene extends Phaser.Scene {
         angle: Phaser.Math.Between(-140, 140),
         scale: 0.2,
         alpha: 0,
-        duration: Phaser.Math.Between(260, 440),
+        duration: dur,
         onComplete: () => spark.destroy(),
       });
+
+      // Longer multi-spark metallic streak trails on PARRY & RIPOSTE in Sidequest Labs Edition
+      if (isSidequest && isParryOrRiposte && i % 2 === 0) {
+        const streak = this.add
+          .rectangle(
+            x,
+            y,
+            18,
+            2.5,
+            i % 4 === 0
+              ? SIDEQUEST_PALETTE.GOLD_SPECULAR
+              : SIDEQUEST_PALETTE.STEEL_SPECULAR
+          )
+          .setRotation(angle);
+        this.clashFxContainer.add(streak);
+        this.tweens.add({
+          targets: streak,
+          x: x + Math.cos(angle) * (speed * 1.25),
+          y: y + Math.sin(angle) * (speed * 1.25) + 10,
+          scaleX: 0.15,
+          alpha: 0,
+          duration: dur + 110,
+          ease: 'Cubic.easeOut',
+          onComplete: () => streak.destroy(),
+        });
+      }
     }
   }
 
@@ -1644,11 +1764,20 @@ export class SwordplayScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+    const isSidequest = gameState.isSidequestEdition();
     const portrait = this.add
-      .image(400, 298, `portrait_${player.id}`)
+      .image(
+        400,
+        298,
+        SidequestArtGenerator.getPortraitKey(this, player.id, isSidequest)
+      )
       .setDisplaySize(76, 76);
     const robinIcon = this.add
-      .image(880, 298, 'icon_sherwood')
+      .image(
+        880,
+        298,
+        SidequestArtGenerator.getMapIconKey(this, 'icon_sherwood', isSidequest)
+      )
       .setDisplaySize(72, 72);
 
     const bodyTxt = this.add
@@ -1734,17 +1863,30 @@ export class SwordplayScene extends Phaser.Scene {
       .setOrigin(0.5);
     this.outcomeModalContainer.add(header);
 
+    const isSidequest = GameState.getInstance().isSidequestEdition();
     if (isWin && summary.missionType === 'RESCUE' && summary.rescuedDamsel) {
       // Celebratory Romantic / Marriage Scroll!
       const lady = summary.rescuedDamsel;
       const pImg = this.add
-        .image(490, 276, `portrait_${player.id}`)
+        .image(
+          490,
+          276,
+          SidequestArtGenerator.getPortraitKey(this, player.id, isSidequest)
+        )
         .setDisplaySize(76, 76);
       const lImg = this.add
-        .image(790, 276, `portrait_${lady.id}`)
+        .image(
+          790,
+          276,
+          SidequestArtGenerator.getPortraitKey(this, lady.id, isSidequest)
+        )
         .setDisplaySize(76, 76);
       const heartShield = this.add
-        .image(640, 276, `shield_${player.id}`)
+        .image(
+          640,
+          276,
+          SidequestArtGenerator.getShieldKey(this, player.id, isSidequest)
+        )
         .setDisplaySize(44, 56);
 
       const quoteTxt = this.add
@@ -1814,12 +1956,13 @@ export class SwordplayScene extends Phaser.Scene {
       this.outcomeModalContainer.add([chest, lootTxt]);
     } else {
       // Defeat / Robin Hood Escape Summary
-      const iconKey = isRobinBreakout
-        ? 'icon_sherwood'
-        : `portrait_${summary.targetLordId}`;
-      const safeKey = this.textures.exists(iconKey)
-        ? iconKey
-        : 'portrait_garrison';
+      const safeKey = isRobinBreakout
+        ? SidequestArtGenerator.getMapIconKey(this, 'icon_sherwood', isSidequest)
+        : SidequestArtGenerator.getPortraitKey(
+            this,
+            summary.targetLordId || 'garrison',
+            isSidequest
+          );
       const icon = this.add.image(420, 304, safeKey).setDisplaySize(76, 76);
 
       const bodyStr = isRobinBreakout
@@ -1939,5 +2082,52 @@ export class SwordplayScene extends Phaser.Scene {
         focusTerritoryId: this.session.targetTerritoryId,
       });
     });
+  }
+
+  /**
+   * Sidequest Labs Castle Hall Atmosphere:
+   * Diagonal moonlight beams cutting through the 3 gothic lancet windows (`x = 340, 640, 915`)
+   * with floating illuminated dust motes!
+   */
+  private updateSidequestMoonlightAndDust(delta: number): void {
+    if (!this.sidequestMoonbeamGraphics) return;
+    const dt = delta / 1000;
+    const g = this.sidequestMoonbeamGraphics;
+    g.clear();
+
+    const shimmer = 0.065 + Math.sin(this.envTimer * 0.8) * 0.012;
+    const lancets = [340, 640, 915];
+
+    for (const lx of lancets) {
+      g.fillStyle(0xa8d4f0, shimmer);
+      g.beginPath();
+      g.moveTo(lx - 26, 94);
+      g.lineTo(lx + 26, 94);
+      g.lineTo(lx + 118, 412);
+      g.lineTo(lx + 24, 412);
+      g.closePath();
+      g.fillPath();
+
+      g.fillStyle(0xecf4ff, shimmer * 0.65);
+      g.beginPath();
+      g.moveTo(lx - 10, 102);
+      g.lineTo(lx + 12, 102);
+      g.lineTo(lx + 88, 404);
+      g.lineTo(lx + 46, 404);
+      g.closePath();
+      g.fillPath();
+    }
+
+    for (const m of this.dustMotes) {
+      m.x += (m.vx + Math.sin(this.envTimer + m.phase) * 4) * dt;
+      m.y += m.vy * dt;
+      if (m.y < 96) m.y = 398;
+      if (m.y > 402) m.y = 100;
+      if (m.x > 1060) m.x = 315;
+
+      const alpha = 0.25 + (Math.sin(this.envTimer * 2.1 + m.phase) + 1) * 0.25;
+      g.fillStyle(SIDEQUEST_PALETTE.GOLD_SPECULAR, alpha);
+      g.fillRect(m.x, m.y, 2, 2);
+    }
   }
 }

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PixelArtGenerator } from '../utils/PixelArtGenerator';
+import { SidequestArtGenerator } from '../utils/SidequestArtGenerator';
 import { PALETTE_HEX } from '../data/palette';
 
 export class BootScene extends Phaser.Scene {
@@ -9,6 +10,7 @@ export class BootScene extends Phaser.Scene {
 
   preload(): void {
     PixelArtGenerator.generateAll(this);
+    SidequestArtGenerator.generateAll(this);
   }
 
   create(): void {

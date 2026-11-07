@@ -27,6 +27,35 @@ export class AudioManager {
     AudioManager.getInstance().playFanfare();
   }
 
+  public static play(sound: string): void {
+    const audio = AudioManager.getInstance();
+    switch (sound) {
+      case 'fanfare':
+      case 'victory':
+        audio.playFanfare();
+        break;
+      case 'whoosh':
+      case 'arrow':
+        audio.playCatapultLaunch();
+        break;
+      case 'impact':
+      case 'joust_hit':
+        audio.playLanceImpact(false);
+        break;
+      case 'cheer':
+        audio.playCrowdCheer();
+        break;
+      case 'click':
+      default:
+        audio.playUiClick();
+        break;
+    }
+  }
+
+  public static playTheme(_theme?: string): void {
+    AudioManager.playFanfare();
+  }
+
   private initAudioContext(): void {
     if (typeof window === 'undefined') return;
     try {

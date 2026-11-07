@@ -19,8 +19,11 @@ import {
   UnitType,
 } from '../core/types';
 import { SAXON_DAMSELS } from '../data/damsels';
+import { ALL_RELICS, RelicId } from '../data/relics';
+import { isCoastalPort, EAST_COAST_PORTS, WEST_COAST_PORTS } from '../data/territories';
 import { PALETTE, PALETTE_HEX } from '../data/palette';
 import { PixelArtGenerator } from '../utils/PixelArtGenerator';
+import { SidequestArtGenerator } from '../utils/SidequestArtGenerator';
 import { AudioManager } from '../utils/AudioManager';
 
 export interface MapSceneInitData {
@@ -36,7 +39,8 @@ type RightPanelMode =
   | 'RAID'
   | 'ROBIN_HOOD'
   | 'CHRONICLE'
-  | 'TOURNAMENT';
+  | 'TOURNAMENT'
+  | 'TAVERN';
 
 interface TerritoryPolyHit {
   id: string;
@@ -578,6 +582,25 @@ export class MapScene extends Phaser.Scene {
         }
       }
     }
+
+    // 3. Coastal Amphibious Sea Routes (Sidequest Labs Edition)
+    if (state.edition === 'SIDEQUEST_LABS') {
+      const drawSeaLanes = (ports: readonly string[], isEast: boolean) => {
+        for (let i = 0; i < ports.length - 1; i++) {
+          const t1 = state.territories[ports[i]];
+          const t2 = state.territories[ports[i + 1]];
+          if (!t1 || !t2) continue;
+          const ax = t1.mapCoords.x + (isEast ? 44 : -38);
+          const ay = t1.mapCoords.y;
+          const bx = t2.mapCoords.x + (isEast ? 44 : -38);
+          const by = t2.mapCoords.y;
+          this.mapPathsGraphics.lineStyle(2, 0x38bdf8, 0.65);
+          this.mapPathsGraphics.lineBetween(ax, ay, bx, by);
+        }
+      };
+      drawSeaLanes(EAST_COAST_PORTS, true);
+      drawSeaLanes(WEST_COAST_PORTS, false);
+    }
   }
 
   private renderMapMarkers(state: CampaignState): void {
@@ -632,14 +655,28 @@ export class MapScene extends Phaser.Scene {
         continue;
       }
 
-      // 2. Castle / Royal Home Castle Icon (Crisp 1.25x NEAREST pixel art)
+      // 2. Castle / Royal Home Castle / Royal Keep Icon (Crisp 1.25x NEAREST pixel art)
       if (terr.hasCastle) {
         const isHome = activeHomeTerritorySet.has(terr.id);
         const castleX = hasArmy ? cx - 15 : cx;
         const castleY = isHome ? cy - 5 : cy - 2;
+        const isSidequest = state.edition === 'SIDEQUEST_LABS';
+        let castleIcon = isHome ? 'icon_home_castle' : 'icon_castle';
+        if (isSidequest && terr.isRoyalKeep) {
+          castleIcon = 'sq_icon_royal_keep';
+        } else if (isSidequest) {
+          castleIcon = SidequestArtGenerator.getMapIconKey(
+            this,
+            isHome ? 'icon_home_castle' : 'icon_castle',
+            true
+          );
+        }
         const castleImg = this.add
-          .image(castleX, castleY, isHome ? 'icon_home_castle' : 'icon_castle')
-          .setDisplaySize(isHome ? 34 : 28, isHome ? 36 : 28);
+          .image(castleX, castleY, castleIcon)
+          .setDisplaySize(
+            terr.isRoyalKeep ? 34 : isHome ? 34 : 28,
+            terr.isRoyalKeep ? 36 : isHome ? 36 : 28
+          );
         this.mapMarkersContainer.add(castleImg);
 
         // Captive Saxon Damsel Pin on Captor's Stronghold
@@ -657,6 +694,25 @@ export class MapScene extends Phaser.Scene {
             .setOrigin(0.5);
           this.mapMarkersContainer.add(capTag);
         }
+      }
+
+      // Territory Market/Mill Icon (Sidequest Labs)
+      if (state.edition === 'SIDEQUEST_LABS' && terr.hasMarket) {
+        const marketImg = this.add
+          .image(cx - 20, cy + 14, 'sq_icon_market')
+          .setDisplaySize(20, 20);
+        this.mapMarkersContainer.add(marketImg);
+      }
+
+      // Coastal Port Cog Ship Icon (Sidequest Labs)
+      if (state.edition === 'SIDEQUEST_LABS' && isCoastalPort(terr.id)) {
+        const shipX = cx + (EAST_COAST_PORTS.includes(terr.id) ? 38 : -34);
+        const shipY = cy + 4;
+        const shipImg = this.add
+          .image(shipX, shipY, 'sq_icon_ship')
+          .setDisplaySize(20, 17)
+          .setAlpha(0.85);
+        this.mapMarkersContainer.add(shipImg);
       }
 
       // 3. Heraldic Shield / Campaign Army Pawns
@@ -1028,23 +1084,56 @@ export class MapScene extends Phaser.Scene {
       }
     );
 
+    const isNorman = player.faction === 'norman';
+    const isSidequest = state.edition === 'SIDEQUEST_LABS';
+    const factionLabel = isNorman
+      ? isSidequest ? '⚔ NORMAN' : 'NORMAN'
+      : isSidequest ? '👑 SAXON' : 'SAXON CROWN';
+    const factionColor = isNorman ? '#FF8282' : '#82B1FF';
+
     const factionBadge = this.add
-      .text(1248, 22, 'SAXON CROWN', {
+      .text(1248, 22, factionLabel, {
         fontFamily: FONT_BODY,
         fontSize: '11.5px',
         fontStyle: 'bold',
-        color: '#82B1FF',
+        color: factionColor,
         resolution: TEXT_RES,
       })
       .setOrigin(1, 0);
     this.topBannerContainer.add([dateTxt, factionBadge]);
 
+    if (isSidequest && state.nemesisLordId) {
+      const nemesis = state.activeLords[state.nemesisLordId];
+      if (nemesis && !nemesis.isDefeated) {
+        const nemBadge = this.add
+          .text(1135, 22, `[NEMESIS: ${nemesis.name.split(' ')[0]}]`, {
+            fontFamily: FONT_BODY,
+            fontSize: '11px',
+            fontStyle: 'bold',
+            color: '#EF4444',
+            resolution: TEXT_RES,
+          })
+          .setOrigin(1, 0);
+        this.topBannerContainer.add(nemBadge);
+      }
+    }
+
     // Crisp 68x68 Retro Portrait & 40x52 Heraldic Shield
+    const portraitKey = SidequestArtGenerator.getPortraitKey(
+      this,
+      player.id,
+      isSidequest
+    );
+    const shieldKey = SidequestArtGenerator.getShieldKey(
+      this,
+      player.id,
+      isSidequest
+    );
     const portrait = this.add
-      .image(846, 84, `portrait_${player.id}`)
+      .image(846, 84, portraitKey)
       .setDisplaySize(68, 68);
     const shield = this.add
-      .image(906, 84, `shield_${player.id}`)
+      .image(906, 84, shieldKey)
       .setDisplaySize(40, 50);
     this.topBannerContainer.add([portrait, shield]);
 
@@ -1056,13 +1145,17 @@ export class MapScene extends Phaser.Scene {
       resolution: TEXT_RES,
     });
 
+    const ransomPart =
+      isSidequest && (state.royalRansomPaid ?? 0) > 0
+        ? `  •  ${isNorman ? 'Coronation' : 'Ransom'}: ${state.royalRansomPaid}/200G`
+        : '';
     const goldTxt = this.add.text(
       940,
       74,
-      `TREASURY: ${player.gold} Gold   (+${taxIncome}G / mo)`,
+      `TREASURY: ${player.gold} Gold   (+${taxIncome}G / mo)${ransomPart}`,
       {
         fontFamily: FONT_BODY,
-        fontSize: '14.5px',
+        fontSize: '13.5px',
         fontStyle: 'bold',
         color: PALETTE_HEX.GOLD_BRIGHT,
         resolution: TEXT_RES,
@@ -1102,10 +1195,14 @@ export class MapScene extends Phaser.Scene {
       false
     );
 
+    const archerStr =
+      isSidequest && player.campaignArmy.archers !== undefined
+        ? `   •   ${player.campaignArmy.archers} Archers`
+        : '';
     const armyLine1 = this.add.text(
       820,
       139,
-      `CAMPAIGN ARMY:   ${soldiers} Soldiers   •   ${knights} Knights   •   ${catapults} Catapults`,
+      `CAMPAIGN ARMY:   ${soldiers} Soldiers   •   ${knights} Knights   •   ${catapults} Catapults${archerStr}`,
       {
         fontFamily: FONT_BODY,
         fontSize: '13px',
@@ -1147,6 +1244,8 @@ export class MapScene extends Phaser.Scene {
       this.renderRobinHoodPanel(state);
     } else if (this.panelMode === 'CHRONICLE') {
       this.renderChronicleAndLordsPanel(state);
+    } else if (this.panelMode === 'TAVERN') {
+      this.renderTavernAndDiplomacyPanel(state);
     }
   }
 
@@ -1221,29 +1320,49 @@ export class MapScene extends Phaser.Scene {
       ? PALETTE_HEX.FOLIAGE_DARK
       : PALETTE_HEX.BLOOD_RED;
 
+    const isSidequest = state.edition === 'SIDEQUEST_LABS';
     const isActiveHome = Boolean(
       owner && !owner.isDefeated && owner.homeTerritoryId === terr.id
     );
-    const castleStr = isActiveHome
-      ? 'Royal Home Stronghold (+25% Defense)'
-      : terr.hasCastle
-      ? 'Fortified Stone Castle (+25% Defense)'
-      : 'Open Shire (No Castle Built)';
+    const castleStr =
+      isSidequest && terr.isRoyalKeep
+        ? 'Royal Keep (+40% Defense, 150 Wall Integrity)'
+        : isActiveHome
+        ? 'Royal Home Stronghold (+25% Defense)'
+        : terr.hasCastle
+        ? 'Fortified Stone Castle (+25% Defense)'
+        : 'Open Shire (No Castle Built)';
+
+    const marketBonus = isSidequest && terr.hasMarket ? ' (+2 Market)' : '';
+    const archerGarStr = isSidequest
+      ? `  •  ${terr.garrison.archers ?? 0} Archers`
+      : '';
 
     const lines: Array<{ text: string; color: string; bold?: boolean }> = [
       { text: `Ruler: ${ownerLabel}`, color: ownerColor, bold: true },
       {
-        text: `Monthly Tax Income: +${terr.taxIncome} Gold / Month`,
+        text: `Monthly Tax Income: +${terr.taxIncome}${marketBonus} Gold / Month`,
         color: PALETTE_HEX.WOOD_DARK,
         bold: true,
       },
       { text: `Fortification: ${castleStr}`, color: '#5A3A1E' },
       {
-        text: `Garrison: ${terr.garrison.soldiers} Soldiers  •  ${terr.garrison.knights} Knights  •  ${terr.garrison.catapults} Catapults`,
+        text: `Garrison: ${terr.garrison.soldiers} Soldiers  •  ${terr.garrison.knights} Knights  •  ${terr.garrison.catapults} Catapults${archerGarStr}`,
         color: '#1C1814',
         bold: true,
       },
     ];
+
+    if (isSidequest && (state.spiedTurnsRemaining ?? 0) > 0 && owner && !owner.isPlayer) {
+      const sabotageStr = terr.sabotagedWallDamage
+        ? `  •  ⚠️ Sabotaged (-${terr.sabotagedWallDamage} Wall)`
+        : '';
+      lines.push({
+        text: `[🔍 SPY INTEL ACTIVE] Vault: ${owner.gold} Gold${sabotageStr}`,
+        color: PALETTE_HEX.BLOOD_RED,
+        bold: true,
+      });
+    }
 
     let ry = 260;
     for (const l of lines) {
@@ -1296,6 +1415,20 @@ export class MapScene extends Phaser.Scene {
       resolution: TEXT_RES,
     });
     this.dynamicPanelContainer.add(footerTxt);
+
+    // In SIDEQUEST_LABS mode, display player's active Armory Relics
+    if (isSidequest && player.relicIds && player.relicIds.length > 0) {
+      let rx = 824;
+      for (const rid of player.relicIds) {
+        const rDef = ALL_RELICS[rid as RelicId];
+        if (!rDef) continue;
+        const icon = this.add
+          .image(rx, 448, `sq_relic_${rid}`)
+          .setDisplaySize(24, 24);
+        this.dynamicPanelContainer.add(icon);
+        rx += 30;
+      }
+    }
   }
 
   private renderRecruitAndGarrisonPanel(state: CampaignState): void {
@@ -1324,6 +1457,8 @@ export class MapScene extends Phaser.Scene {
       .setOrigin(0.5);
     this.dynamicPanelContainer.add(header);
 
+    const isSidequest = state.edition === 'SIDEQUEST_LABS';
+
     const recruitRows: Array<{
       label: string;
       y: number;
@@ -1334,85 +1469,215 @@ export class MapScene extends Phaser.Scene {
         enabled: boolean;
         onClick: () => void;
       }>;
-    }> = [
-      {
-        label: `Men-at-Arms Soldier (${UNIT_COSTS.soldiers}G)`,
-        y: 268,
-        buttons: [
+    }> = isSidequest
+      ? [
           {
-            text: '+1',
-            x: 1112,
-            w: 58,
-            enabled: player.gold >= UNIT_COSTS.soldiers,
-            onClick: () => {
-              const r = gameState.purchaseUnit(player.id, 'soldiers', 1, 'campaign');
-              this.setStatusMessage(r.message, !r.success);
-            },
+            label: `Soldier (${UNIT_COSTS.soldiers}G)`,
+            y: 252,
+            buttons: [
+              {
+                text: '+1',
+                x: 1112,
+                w: 58,
+                enabled: player.gold >= UNIT_COSTS.soldiers,
+                onClick: () => {
+                  const r = gameState.purchaseUnit(player.id, 'soldiers', 1, 'campaign');
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+              {
+                text: '+5',
+                x: 1178,
+                w: 62,
+                enabled: player.gold >= UNIT_COSTS.soldiers * 5,
+                onClick: () => {
+                  const r = gameState.purchaseUnit(player.id, 'soldiers', 5, 'campaign');
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+            ],
           },
           {
-            text: '+5',
-            x: 1178,
-            w: 62,
-            enabled: player.gold >= UNIT_COSTS.soldiers * 5,
-            onClick: () => {
-              const r = gameState.purchaseUnit(player.id, 'soldiers', 5, 'campaign');
-              this.setStatusMessage(r.message, !r.success);
-            },
+            label: `Longbowman (${UNIT_COSTS.archers}G)`,
+            y: 284,
+            buttons: [
+              {
+                text: '+1',
+                x: 1112,
+                w: 58,
+                enabled: player.gold >= UNIT_COSTS.archers,
+                onClick: () => {
+                  const r = gameState.purchaseUnit(player.id, 'archers', 1, 'campaign');
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+              {
+                text: '+5',
+                x: 1178,
+                w: 62,
+                enabled: player.gold >= UNIT_COSTS.archers * 5,
+                onClick: () => {
+                  const r = gameState.purchaseUnit(player.id, 'archers', 5, 'campaign');
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+            ],
           },
-        ],
-      },
-      {
-        label: `Armored Knight (${UNIT_COSTS.knights}G)`,
-        y: 310,
-        buttons: [
           {
-            text: 'BUY +1',
-            x: 1112,
-            w: 128,
-            enabled: player.gold >= UNIT_COSTS.knights,
-            onClick: () => {
-              const r = gameState.purchaseUnit(player.id, 'knights', 1, 'campaign');
-              this.setStatusMessage(r.message, !r.success);
-            },
+            label: `Knight (${UNIT_COSTS.knights}G)`,
+            y: 316,
+            buttons: [
+              {
+                text: 'BUY +1',
+                x: 1112,
+                w: 128,
+                enabled: player.gold >= UNIT_COSTS.knights,
+                onClick: () => {
+                  const r = gameState.purchaseUnit(player.id, 'knights', 1, 'campaign');
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+            ],
           },
-        ],
-      },
-      {
-        label: `Siege Catapult (${UNIT_COSTS.catapults}G)`,
-        y: 352,
-        buttons: [
           {
-            text: 'BUY +1',
-            x: 1112,
-            w: 128,
-            enabled: player.gold >= UNIT_COSTS.catapults,
-            onClick: () => {
-              const r = gameState.purchaseUnit(player.id, 'catapults', 1, 'campaign');
-              this.setStatusMessage(r.message, !r.success);
-            },
+            label: `Catapult (${UNIT_COSTS.catapults}G)`,
+            y: 348,
+            buttons: [
+              {
+                text: 'BUY +1',
+                x: 1112,
+                w: 128,
+                enabled: player.gold >= UNIT_COSTS.catapults,
+                onClick: () => {
+                  const r = gameState.purchaseUnit(player.id, 'catapults', 1, 'campaign');
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+            ],
           },
-        ],
-      },
-      {
-        label: `Castle in ${castleTargetTerr.name} (${UNIT_COSTS.castle}G)`,
-        y: 394,
-        buttons: [
           {
-            text: castleTargetTerr.hasCastle ? 'CASTLE BUILT' : 'BUILD (20G)',
-            x: 1112,
-            w: 128,
-            enabled:
-              castleTargetTerr.ownerId === player.id &&
-              !castleTargetTerr.hasCastle &&
-              player.gold >= UNIT_COSTS.castle,
-            onClick: () => {
-              const r = gameState.buildCastle(player.id, castleTargetTerr.id);
-              this.setStatusMessage(r.message, !r.success);
-            },
+            label: `Upgrades (${castleTargetTerr.name})`,
+            y: 382,
+            buttons: [
+              {
+                text: castleTargetTerr.hasMarket ? 'MARKET' : 'MKT (12G)',
+                x: 1040,
+                w: 96,
+                enabled:
+                  castleTargetTerr.ownerId === player.id &&
+                  !castleTargetTerr.hasMarket &&
+                  player.gold >= UNIT_COSTS.market,
+                onClick: () => {
+                  const r = gameState.buildMarket(player.id, castleTargetTerr.id);
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+              {
+                text: castleTargetTerr.isRoyalKeep
+                  ? 'ROYAL KEEP'
+                  : castleTargetTerr.hasCastle
+                  ? 'KEEP (30G)'
+                  : 'CASTLE (20G)',
+                x: 1142,
+                w: 100,
+                enabled:
+                  castleTargetTerr.ownerId === player.id &&
+                  ((!castleTargetTerr.hasCastle && player.gold >= UNIT_COSTS.castle) ||
+                    (castleTargetTerr.hasCastle &&
+                      !castleTargetTerr.isRoyalKeep &&
+                      player.gold >= UNIT_COSTS.royalKeep)),
+                onClick: () => {
+                  if (!castleTargetTerr.hasCastle) {
+                    const r = gameState.buildCastle(player.id, castleTargetTerr.id);
+                    this.setStatusMessage(r.message, !r.success);
+                  } else {
+                    const r = gameState.upgradeRoyalKeep(player.id, castleTargetTerr.id);
+                    this.setStatusMessage(r.message, !r.success);
+                  }
+                },
+              },
+            ],
           },
-        ],
-      },
-    ];
+        ]
+      : [
+          {
+            label: `Men-at-Arms Soldier (${UNIT_COSTS.soldiers}G)`,
+            y: 268,
+            buttons: [
+              {
+                text: '+1',
+                x: 1112,
+                w: 58,
+                enabled: player.gold >= UNIT_COSTS.soldiers,
+                onClick: () => {
+                  const r = gameState.purchaseUnit(player.id, 'soldiers', 1, 'campaign');
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+              {
+                text: '+5',
+                x: 1178,
+                w: 62,
+                enabled: player.gold >= UNIT_COSTS.soldiers * 5,
+                onClick: () => {
+                  const r = gameState.purchaseUnit(player.id, 'soldiers', 5, 'campaign');
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+            ],
+          },
+          {
+            label: `Armored Knight (${UNIT_COSTS.knights}G)`,
+            y: 310,
+            buttons: [
+              {
+                text: 'BUY +1',
+                x: 1112,
+                w: 128,
+                enabled: player.gold >= UNIT_COSTS.knights,
+                onClick: () => {
+                  const r = gameState.purchaseUnit(player.id, 'knights', 1, 'campaign');
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+            ],
+          },
+          {
+            label: `Siege Catapult (${UNIT_COSTS.catapults}G)`,
+            y: 352,
+            buttons: [
+              {
+                text: 'BUY +1',
+                x: 1112,
+                w: 128,
+                enabled: player.gold >= UNIT_COSTS.catapults,
+                onClick: () => {
+                  const r = gameState.purchaseUnit(player.id, 'catapults', 1, 'campaign');
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+            ],
+          },
+          {
+            label: `Castle in ${castleTargetTerr.name} (${UNIT_COSTS.castle}G)`,
+            y: 394,
+            buttons: [
+              {
+                text: castleTargetTerr.hasCastle ? 'CASTLE BUILT' : 'BUILD (20G)',
+                x: 1112,
+                w: 128,
+                enabled:
+                  castleTargetTerr.ownerId === player.id &&
+                  !castleTargetTerr.hasCastle &&
+                  player.gold >= UNIT_COSTS.castle,
+                onClick: () => {
+                  const r = gameState.buildCastle(player.id, castleTargetTerr.id);
+                  this.setStatusMessage(r.message, !r.success);
+                },
+              },
+            ],
+          },
+        ];
 
     for (const row of recruitRows) {
       const lbl = this.add
@@ -1442,10 +1707,13 @@ export class MapScene extends Phaser.Scene {
 
     // Section B: Garrison <-> Campaign Army Transfers
     const canTransfer = stationedTerr && stationedTerr.ownerId === player.id;
+    const transferTitleY = isSidequest ? 420 : 444;
+    const subLegendY = isSidequest ? 440 : 466;
+
     const transferTitle = this.add
       .text(
         1030,
-        444,
+        transferTitleY,
         `GARRISON  ↔  FIELD ARMY  (${stationedTerr.name.toUpperCase()})`,
         {
           fontFamily: FONT_BODY,
@@ -1459,7 +1727,7 @@ export class MapScene extends Phaser.Scene {
     this.dynamicPanelContainer.add(transferTitle);
 
     const subLegend = this.add
-      .text(1030, 466, 'UNIT            GARRISON      [ - To Gar  /  + To Army ]      ARMY', {
+      .text(1030, subLegendY, 'UNIT            GARRISON      [ - To Gar  /  + To Army ]      ARMY', {
         fontFamily: FONT_BODY,
         fontSize: '11.5px',
         fontStyle: '600',
@@ -1469,15 +1737,22 @@ export class MapScene extends Phaser.Scene {
       .setOrigin(0.5);
     this.dynamicPanelContainer.add(subLegend);
 
-    const transferUnits: Array<{ label: string; key: UnitType; y: number }> = [
-      { label: 'Soldiers', key: 'soldiers', y: 496 },
-      { label: 'Knights', key: 'knights', y: 534 },
-      { label: 'Catapults', key: 'catapults', y: 572 },
-    ];
+    const transferUnits: Array<{ label: string; key: UnitType; y: number }> = isSidequest
+      ? [
+          { label: 'Soldiers', key: 'soldiers', y: 466 },
+          { label: 'Archers', key: 'archers', y: 498 },
+          { label: 'Knights', key: 'knights', y: 530 },
+          { label: 'Catapults', key: 'catapults', y: 562 },
+        ]
+      : [
+          { label: 'Soldiers', key: 'soldiers', y: 496 },
+          { label: 'Knights', key: 'knights', y: 534 },
+          { label: 'Catapults', key: 'catapults', y: 572 },
+        ];
 
     for (const u of transferUnits) {
-      const garCount = stationedTerr ? stationedTerr.garrison[u.key] : 0;
-      const armCount = player.campaignArmy[u.key];
+      const garCount = stationedTerr ? (stationedTerr.garrison[u.key] ?? 0) : 0;
+      const armCount = player.campaignArmy[u.key] ?? 0;
 
       const rowLbl = this.add
         .text(820, u.y, u.label, {
@@ -1587,66 +1862,82 @@ export class MapScene extends Phaser.Scene {
 
   private renderRobinHoodPanel(state: CampaignState): void {
     const gameState = GameState.getInstance();
+    const isNorman = state.playerFaction === 'norman';
 
     const card = this.drawParchmentCard(796, 202, 468, 446);
     card.lineBetween(818, 248, 1242, 248);
 
     const header = this.add
-      .text(1030, 228, 'ROBIN OF LOCKSLEY', {
-        fontFamily: FONT_HEADING,
-        fontSize: '19px',
-        fontStyle: 'bold',
-        color: PALETTE_HEX.FOLIAGE_DARK,
-        resolution: TEXT_RES,
-      })
-      .setOrigin(0.5);
-    this.dynamicPanelContainer.add(header);
-
-    const icon = this.add
-      .image(856, 308, 'icon_sherwood')
-      .setDisplaySize(56, 56);
-    this.dynamicPanelContainer.add(icon);
-
-    const quote = this.add.text(
-      900,
-      268,
-      '"Hail, noble Saxon! My Merry Men stand\nready beneath the boughs of Sherwood to\naid thy banner against Norman tyranny!"',
-      {
-        fontFamily: 'Georgia, serif',
-        fontSize: '15.5px',
-        fontStyle: 'italic',
-        color: PALETTE_HEX.WOOD_DARK,
-        lineSpacing: 6,
-        resolution: TEXT_RES,
-      }
-    );
-    this.dynamicPanelContainer.add(quote);
-
-    const usesInfo = this.add
       .text(
         1030,
-        396,
-        `CAMPAIGN FAVORS REMAINING:  ${state.robinHoodUsesLeft} / 3`,
+        228,
+        isNorman ? "PRINCE JOHN'S CHARTER" : 'ROBIN OF LOCKSLEY',
         {
-          fontFamily: FONT_BODY,
-          fontSize: '16px',
+          fontFamily: FONT_HEADING,
+          fontSize: '19px',
           fontStyle: 'bold',
-          color:
-            state.robinHoodUsesLeft > 0
-              ? PALETTE_HEX.BLOOD_RED
-              : PALETTE_HEX.STONE_DARK,
+          color: isNorman ? PALETTE_HEX.BLOOD_RED : PALETTE_HEX.FOLIAGE_DARK,
           resolution: TEXT_RES,
         }
       )
       .setOrigin(0.5);
+    this.dynamicPanelContainer.add(header);
+
+    const iconKey = isNorman
+      ? (state.edition === 'SIDEQUEST_LABS' ? 'sq_icon_royal_keep' : 'icon_home_castle')
+      : SidequestArtGenerator.getMapIconKey(
+          this,
+          'icon_sherwood',
+          state.edition === 'SIDEQUEST_LABS'
+        );
+    const icon = this.add
+      .image(856, 308, iconKey)
+      .setDisplaySize(56, 56);
+    this.dynamicPanelContainer.add(icon);
+
+    const quoteStr = isNorman
+      ? '"By Royal Decree of Prince John, Regent of England!\nLoyal Norman barons enforcing the King\'s peace\nreceive mercenary reinforcements and archery levy."'
+      : '"Hail, noble Saxon! My Merry Men stand\nready beneath the boughs of Sherwood to\naid thy banner against Norman tyranny!"';
+
+    const quote = this.add.text(900, 268, quoteStr, {
+      fontFamily: 'Georgia, serif',
+      fontSize: '15.5px',
+      fontStyle: 'italic',
+      color: PALETTE_HEX.WOOD_DARK,
+      lineSpacing: 6,
+      resolution: TEXT_RES,
+    });
+    this.dynamicPanelContainer.add(quote);
+
+    const usesLabel = isNorman
+      ? `ROYAL WRITS REMAINING:  ${state.robinHoodUsesLeft} / 3`
+      : `CAMPAIGN FAVORS REMAINING:  ${state.robinHoodUsesLeft} / 3`;
+
+    const usesInfo = this.add
+      .text(1030, 396, usesLabel, {
+        fontFamily: FONT_BODY,
+        fontSize: '16px',
+        fontStyle: 'bold',
+        color:
+          state.robinHoodUsesLeft > 0
+            ? PALETTE_HEX.BLOOD_RED
+            : PALETTE_HEX.STONE_DARK,
+        resolution: TEXT_RES,
+      })
+      .setOrigin(0.5);
     this.dynamicPanelContainer.add(usesInfo);
 
-    const statusLine =
-      state.robinHoodUsesLeft <= 0
-        ? 'Robin Hood has already aided thy cause 3 times this campaign.'
+    const statusLine = isNorman
+      ? state.robinHoodUsesLeft <= 0
+        ? 'Prince John has issued all 3 royal writs this campaign.'
         : state.robinHoodUsedThisTurn
-        ? 'Merry Men have already joined thy host this month.'
-        : `Grants +${ROBIN_HOOD_MERRY_MEN_COUNT} Free Soldiers directly to thy Campaign Army!`;
+        ? 'A royal writ has already been exercised this month.'
+        : 'Grants +10 Mercenary Soldiers & +2 Longbowmen directly to thy Host!'
+      : state.robinHoodUsesLeft <= 0
+      ? 'Robin Hood has already aided thy cause 3 times this campaign.'
+      : state.robinHoodUsedThisTurn
+      ? 'Merry Men have already joined thy host this month.'
+      : `Grants +${ROBIN_HOOD_MERRY_MEN_COUNT} Free Soldiers directly to thy Campaign Army!`;
 
     const subTxt = this.add
       .text(1030, 434, statusLine, {
@@ -1660,16 +1951,22 @@ export class MapScene extends Phaser.Scene {
 
     const canCall =
       state.robinHoodUsesLeft > 0 && !state.robinHoodUsedThisTurn;
+    const btnLabel = isNorman
+      ? '👑  INVOKE ROYAL CHARTER (+10 SOLDIERS & +2 ARCHERS)'
+      : `🏹  SUMMON MERRY MEN (+${ROBIN_HOOD_MERRY_MEN_COUNT} SOLDIERS)`;
+
     this.addMiniButton(
       this.dynamicPanelContainer,
       820,
       478,
       420,
       46,
-      `🏹  SUMMON MERRY MEN (+${ROBIN_HOOD_MERRY_MEN_COUNT} SOLDIERS)`,
+      btnLabel,
       canCall,
       () => {
-        const res = gameState.consultRobinHood();
+        const res = isNorman
+          ? gameState.invokePrinceJohnCharter()
+          : gameState.consultRobinHood();
         this.setStatusMessage(res.message, !res.success);
       }
     );
@@ -1727,10 +2024,15 @@ export class MapScene extends Phaser.Scene {
         ? PALETTE_HEX.FOLIAGE_DARK
         : PALETTE_HEX.BLOOD_RED;
 
+      const pactTag =
+        (lord.pactWithPlayerTurns ?? 0) > 0
+          ? ` [PACT ${lord.pactWithPlayerTurns}T]`
+          : '';
+
       const leftTxt = this.add.text(
         844,
         ly,
-        `${lord.name} [${factionStr}]`,
+        `${lord.name} [${factionStr}]${pactTag}`,
         {
           fontFamily: FONT_BODY,
           fontSize: '13px',
@@ -1794,6 +2096,222 @@ export class MapScene extends Phaser.Scene {
     });
     this.dynamicPanelContainer.add(logBody);
 
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      820,
+      602,
+      420,
+      32,
+      '←  BACK TO TERRITORY DOSSIER',
+      true,
+      () => {
+        this.panelMode = 'DOSSIER';
+        this.scheduleRefresh();
+      }
+    );
+  }
+
+  private renderTavernAndDiplomacyPanel(state: CampaignState): void {
+    const gameState = GameState.getInstance();
+    const player = gameState.getPlayerLord();
+    const isNorman = player.faction === 'norman';
+
+    const card = this.drawParchmentCard(796, 202, 468, 446);
+    card.lineBetween(818, 244, 1242, 244);
+    card.lineBetween(818, 428, 1242, 428);
+
+    const header = this.add
+      .text(1030, 226, '🍺  THE CROWN TAVERN & DIPLOMACY', {
+        fontFamily: FONT_HEADING,
+        fontSize: '17px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.WOOD_DARK,
+        resolution: TEXT_RES,
+      })
+      .setOrigin(0.5);
+    this.dynamicPanelContainer.add(header);
+
+    // 1. Hire Spy (5G)
+    const spyActive = (state.spiedTurnsRemaining ?? 0) > 0;
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      818,
+      256,
+      204,
+      34,
+      spyActive ? `SPY INTEL (${state.spiedTurnsRemaining}T)` : '🔍 HIRE SPY (5G)',
+      Boolean(!spyActive && player.gold >= 5),
+      () => {
+        const res = gameState.hireSpy();
+        this.setStatusMessage(res.message, !res.success);
+      }
+    );
+
+    // 2. Hire Mercenaries (15G)
+    const mercsHired = Boolean(state.mercenariesHiredThisTurn);
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      1034,
+      256,
+      208,
+      34,
+      mercsHired ? 'MERCENARIES HIRED' : '⚔ HIRE MERCS (15G)',
+      Boolean(!mercsHired && player.gold >= 15),
+      () => {
+        const res = gameState.hireMercenaries();
+        this.setStatusMessage(res.message, !res.success);
+      }
+    );
+
+    // 3. Send Saboteur (12G)
+    const enemyCastles = Object.values(state.territories).filter(
+      (t) => t.hasCastle && t.ownerId && t.ownerId !== player.id
+    );
+    const selectedTerr = state.territories[this.selectedTerritoryId];
+    const targetTerr =
+      selectedTerr && selectedTerr.hasCastle && selectedTerr.ownerId && selectedTerr.ownerId !== player.id
+        ? selectedTerr
+        : enemyCastles[0];
+
+    const saboteurSent = Boolean(state.saboteurSentThisTurn);
+    const saboteurLabel = saboteurSent
+      ? 'SABOTEUR SENT'
+      : targetTerr
+      ? `🗡 SABOTAGE ${targetTerr.name.slice(0, 8)} (12G)`
+      : 'NO ENEMY CASTLES';
+
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      818,
+      300,
+      204,
+      34,
+      saboteurLabel,
+      Boolean(!saboteurSent && targetTerr && player.gold >= 12),
+      () => {
+        if (!targetTerr) return;
+        const res = gameState.sendSaboteur(targetTerr.id);
+        this.setStatusMessage(res.message, !res.success);
+      }
+    );
+
+    // 4. Propose Non-Aggression Pact (10G)
+    const alliedLords = Object.values(state.activeLords).filter(
+      (l) => l.faction === player.faction && !l.isPlayer && !l.isDefeated
+    );
+    const pactPartner = alliedLords[0];
+    const pactActive = pactPartner && (pactPartner.pactWithPlayerTurns ?? 0) > 0;
+    const pactLabel = pactActive
+      ? `PACT ACTIVE (${pactPartner.pactWithPlayerTurns}T)`
+      : pactPartner
+      ? `🤝 PACT: ${pactPartner.name.split(' ')[0]} (10G)`
+      : 'NO ALLIED LORDS';
+
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      1034,
+      300,
+      208,
+      34,
+      pactLabel,
+      Boolean(!pactActive && pactPartner && player.gold >= 10),
+      () => {
+        if (!pactPartner) return;
+        const res = gameState.proposeNonAggressionPact(pactPartner.id);
+        this.setStatusMessage(res.message, !res.success);
+      }
+    );
+
+    // Explanatory Subtext for Tavern actions
+    const tavernInfo = this.add.text(
+      818,
+      346,
+      '• Spy: Exact garrisons, treasury & sabotage intel for 3 turns.\n• Mercenaries: +8 Soldiers & +2 Longbowmen to Campaign Army.\n• Saboteur: -30 Castle Wall Integrity & poisons 15% garrison.\n• Pact: 3-Turn non-aggression agreement with an allied Lord.',
+      {
+        fontFamily: FONT_BODY,
+        fontSize: '11px',
+        color: '#1E1A16',
+        lineSpacing: 3,
+        resolution: TEXT_RES,
+      }
+    );
+    this.dynamicPanelContainer.add(tavernInfo);
+
+    // Section B: Royal Ransom / Coronation Fund (200 Gold Victory Condition)
+    const ransomGoal = 200;
+    const paid = state.royalRansomPaid ?? 0;
+    const victoryTitle = isNorman
+      ? "👑  PRINCE JOHN'S CORONATION FUND"
+      : "👑  KING RICHARD'S ROYAL RANSOM";
+    const victoryDesc = isNorman
+      ? 'Fund 200 Gold to coronate Prince John as King of England!'
+      : 'Ransom King Richard the Lionheart with 200 Gold for Victory!';
+
+    const fundTitle = this.add
+      .text(1030, 442, victoryTitle, {
+        fontFamily: FONT_HEADING,
+        fontSize: '13.5px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.BLOOD_RED,
+        resolution: TEXT_RES,
+      })
+      .setOrigin(0.5);
+
+    const fundSub = this.add
+      .text(1030, 460, `${victoryDesc} (${paid} / ${ransomGoal} Gold)`, {
+        fontFamily: FONT_BODY,
+        fontSize: '11px',
+        fontStyle: 'bold',
+        color: PALETTE_HEX.WOOD_DARK,
+        resolution: TEXT_RES,
+      })
+      .setOrigin(0.5);
+    this.dynamicPanelContainer.add([fundTitle, fundSub]);
+
+    // Progress Bar
+    const progBg = this.add.graphics();
+    progBg.fillStyle(PALETTE.WOOD_DARK, 0.9);
+    progBg.fillRoundedRect(820, 478, 420, 16, 3);
+    progBg.fillStyle(PALETTE.GOLD_BRIGHT, 1);
+    const fillW = Math.min(416, Math.round((paid / ransomGoal) * 416));
+    if (fillW > 0) {
+      progBg.fillRoundedRect(822, 480, fillW, 12, 2);
+    }
+    this.dynamicPanelContainer.add(progBg);
+
+    // Contribution Buttons (+25G, +50G)
+    const can25 = player.gold >= 25 && paid < ransomGoal;
+    const can50 = player.gold >= 50 && paid < ransomGoal;
+
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      820,
+      506,
+      204,
+      34,
+      '+25 GOLD CONTRIB',
+      can25,
+      () => {
+        const res = gameState.contributeRoyalRansom(25);
+        this.setStatusMessage(res.message, !res.success);
+      }
+    );
+
+    this.addMiniButton(
+      this.dynamicPanelContainer,
+      1036,
+      506,
+      204,
+      34,
+      '+50 GOLD CONTRIB',
+      can50,
+      () => {
+        const res = gameState.contributeRoyalRansom(50);
+        this.setStatusMessage(res.message, !res.success);
+      }
+    );
+
+    // Back button
     this.addMiniButton(
       this.dynamicPanelContainer,
       820,
@@ -1923,6 +2441,19 @@ export class MapScene extends Phaser.Scene {
         `👸  RESCUE CAPTIVE ${lady.name.toUpperCase()}!`,
         true,
         () => this.handleLaunchDamselRescue()
+      );
+    }
+
+    if (state.edition === 'SIDEQUEST_LABS' && state.pendingAssassinMission) {
+      this.addMiniButton(
+        this.dynamicPanelContainer,
+        820,
+        514,
+        420,
+        36,
+        '🗡  DEFEND AGAINST NIGHT ASSASSIN!',
+        true,
+        () => this.handleLaunchAssassinDuel()
       );
     }
 
@@ -2199,13 +2730,18 @@ export class MapScene extends Phaser.Scene {
         }
       );
 
-      // Row 3 (y: 562, h: 38): ROBIN HOOD | CHRONICLE & LORDS
+      // Row 3 (y: 562, h: 38): ROBIN HOOD / PRINCE JOHN | CHRONICLE & LORDS
+      const isNorman = state.playerFaction === 'norman';
+      const sanctuaryLabel = isNorman
+        ? `👑  PRINCE JOHN (${state.robinHoodUsesLeft}/3)`
+        : `🏹  ROBIN HOOD (${state.robinHoodUsesLeft}/3)`;
+
       this.addHudCommandButton(
         796,
         562,
         229,
         38,
-        `🏹  ROBIN HOOD (${state.robinHoodUsesLeft}/3)`,
+        sanctuaryLabel,
         isOngoing,
         false,
         false,
@@ -2232,44 +2768,138 @@ export class MapScene extends Phaser.Scene {
         }
       );
 
-      // Row 4 (y: 606, h: 38): SAVE CAMPAIGN PROGRESS [S] (or split with Damsel Rescue)
+      // Row 4 (y: 606, h: 38): TAVERN & DIPLOMACY | ARCHERY | SAVE (or Damsel Rescue)
+      const isSidequest = state.edition === 'SIDEQUEST_LABS';
       if (state.captiveDamsel) {
         const lady = SAXON_DAMSELS[state.captiveDamsel.damselId];
-        this.addHudCommandButton(
-          796,
-          606,
-          320,
-          38,
-          `👸  RESCUE ${lady.name.toUpperCase()}!`,
-          isOngoing,
-          true,
-          true,
-          () => this.handleLaunchDamselRescue()
-        );
+        if (isSidequest) {
+          this.addHudCommandButton(
+            796,
+            606,
+            120,
+            38,
+            `👸  RESCUE!`,
+            isOngoing,
+            true,
+            true,
+            () => this.handleLaunchDamselRescue()
+          );
+          this.addHudCommandButton(
+            922,
+            606,
+            106,
+            38,
+            '🍺  TAVERN',
+            isOngoing,
+            false,
+            false,
+            () => {
+              this.isMarchMode = false;
+              this.panelMode = 'TAVERN';
+              this.scheduleRefresh();
+            }
+          );
+          this.addHudCommandButton(
+            1034,
+            606,
+            126,
+            38,
+            '🏹  ARCHERY',
+            isOngoing,
+            false,
+            false,
+            () => this.handleLaunchArcheryContest()
+          );
+          this.addHudCommandButton(
+            1166,
+            606,
+            98,
+            38,
+            '💾  SAVE',
+            isOngoing,
+            false,
+            false,
+            () => this.handleSaveCampaign()
+          );
+        } else {
+          this.addHudCommandButton(
+            796,
+            606,
+            320,
+            38,
+            `👸  RESCUE ${lady.name.toUpperCase()}!`,
+            isOngoing,
+            true,
+            true,
+            () => this.handleLaunchDamselRescue()
+          );
 
-        this.addHudCommandButton(
-          1126,
-          606,
-          138,
-          38,
-          '💾  SAVE [S]',
-          isOngoing,
-          false,
-          false,
-          () => this.handleSaveCampaign()
-        );
+          this.addHudCommandButton(
+            1126,
+            606,
+            138,
+            38,
+            '💾  SAVE [S]',
+            isOngoing,
+            false,
+            false,
+            () => this.handleSaveCampaign()
+          );
+        }
       } else {
-        this.addHudCommandButton(
-          796,
-          606,
-          468,
-          38,
-          '💾  SAVE CAMPAIGN PROGRESS [S]',
-          isOngoing,
-          false,
-          false,
-          () => this.handleSaveCampaign()
-        );
+        if (isSidequest) {
+          this.addHudCommandButton(
+            796,
+            606,
+            146,
+            38,
+            '🍺  TAVERN',
+            isOngoing,
+            false,
+            false,
+            () => {
+              this.isMarchMode = false;
+              this.panelMode = 'TAVERN';
+              this.scheduleRefresh();
+            }
+          );
+
+          this.addHudCommandButton(
+            950,
+            606,
+            180,
+            38,
+            '🏹  ARCHERY CONTEST',
+            isOngoing,
+            false,
+            false,
+            () => this.handleLaunchArcheryContest()
+          );
+
+          this.addHudCommandButton(
+            1138,
+            606,
+            126,
+            38,
+            '💾  SAVE [S]',
+            isOngoing,
+            false,
+            false,
+            () => this.handleSaveCampaign()
+          );
+        } else {
+          this.addHudCommandButton(
+            796,
+            606,
+            468,
+            38,
+            '💾  SAVE CAMPAIGN PROGRESS [S]',
+            isOngoing,
+            false,
+            false,
+            () => this.handleSaveCampaign()
+          );
+        }
       }
 
       // Bottom Row (y: 654, h: 52): END TURN
@@ -2370,6 +3000,36 @@ export class MapScene extends Phaser.Scene {
 
     this.setStatusMessage(res.message, false);
     this.launchSwordplayScene(res.context);
+  }
+
+  private handleLaunchAssassinDuel(): void {
+    if (this.isTransitioningToBattle) return;
+    const res = GameState.getInstance().initiateAssassinDuel();
+    if (!res.success || !res.context) {
+      this.setStatusMessage(res.message, true);
+      this.scheduleRefresh();
+      return;
+    }
+
+    this.setStatusMessage(res.message, false);
+    this.launchSwordplayScene(res.context);
+  }
+
+  private handleLaunchArcheryContest(): void {
+    if (this.isTransitioningToBattle) return;
+    const res = GameState.getInstance().initiateArcheryContest();
+    if (!res.success) {
+      this.setStatusMessage(res.message, true);
+      this.scheduleRefresh();
+      return;
+    }
+
+    this.isTransitioningToBattle = true;
+    this.isMarchMode = false;
+    this.cameras.main.fadeOut(200, 0, 0, 0);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.scene.start('ArcheryScene');
+    });
   }
 
   private launchSwordplayScene(swordplayContext: PendingSwordplayContext): void {
@@ -2619,6 +3279,11 @@ export class MapScene extends Phaser.Scene {
     const isVictory = state.victoryStatus === 'VICTORY';
     const player = GameState.getInstance().getPlayerLord();
     const heldCount = GameState.getInstance().getPlayerTerritories().length;
+    const isRansomVictory =
+      isVictory &&
+      state.edition === 'SIDEQUEST_LABS' &&
+      (state.royalRansomPaid ?? 0) >= 200;
+    const isNorman = player.faction === 'norman';
 
     const shade = this.add.graphics();
     shade.fillStyle(PALETTE.BLACK, 0.76);
@@ -2632,24 +3297,31 @@ export class MapScene extends Phaser.Scene {
     shade.fillRoundedRect(308, 178, 664, 354, 6);
     this.endGameModalContainer.add(shade);
 
-    const title = this.add
-      .text(
-        640,
-        230,
-        isVictory ? '★  DEFENDER OF THE CROWN!  ★' : '☠  THY REALM HAS FALLEN  ☠',
-        {
-          fontFamily: FONT_HEADING,
-          fontSize: '32px',
-          fontStyle: 'bold',
-          color: isVictory ? PALETTE_HEX.ROYAL_BLUE : PALETTE_HEX.BLOOD_RED,
-          resolution: TEXT_RES,
-        }
-      )
-      .setOrigin(0.5);
-
-    const bodyMsg = isVictory
+    let titleText = isVictory
+      ? '★  DEFENDER OF THE CROWN!  ★'
+      : '☠  THY REALM HAS FALLEN  ☠';
+    let bodyMsg = isVictory
       ? `Hail King ${player.name}!\nEvery rival Saxon and Norman stronghold\nhas bowed before thy royal banner!\n\nConcluded in ${MONTH_NAMES[(state.month - 1) % 12]} ${state.year} A.D. (Turn ${state.turn})\nShires United: ${heldCount}  •  Royal Treasury: ${player.gold} Gold`
       : `Alas! ${player.name}'s ancestral stronghold\nhas been stormed and conquered.\nEngland falls into rival hands in ${MONTH_NAMES[(state.month - 1) % 12]} ${state.year} A.D.`;
+
+    if (isRansomVictory) {
+      titleText = isNorman
+        ? '👑  PRINCE JOHN CORONATED KING!  👑'
+        : '👑  KING RICHARD RESTORED TO ENGLAND!  👑';
+      bodyMsg = isNorman
+        ? `By Royal Proclamation, Prince John's 200 Gold Coronation Fund is complete!\nThy steadfast loyalty has placed the English Crown upon his brow,\nnaming ${player.name} High Chancellor of the realm!\n\nConcluded in ${MONTH_NAMES[(state.month - 1) % 12]} ${state.year} A.D. (Turn ${state.turn})\nRoyal Treasury: ${player.gold} Gold  •  Shires: ${heldCount}`
+        : `Rejoice, merry England! The 200 Gold Royal Ransom has been paid in full!\nKing Richard the Lionheart returns triumphantly to his rightful throne,\nproclaiming ${player.name} as the true Defender of the Crown!\n\nConcluded in ${MONTH_NAMES[(state.month - 1) % 12]} ${state.year} A.D. (Turn ${state.turn})\nRoyal Treasury: ${player.gold} Gold  •  Shires: ${heldCount}`;
+    }
+
+    const title = this.add
+      .text(640, 230, titleText, {
+        fontFamily: FONT_HEADING,
+        fontSize: isRansomVictory ? '26px' : '32px',
+        fontStyle: 'bold',
+        color: isVictory ? PALETTE_HEX.ROYAL_BLUE : PALETTE_HEX.BLOOD_RED,
+        resolution: TEXT_RES,
+      })
+      .setOrigin(0.5);
 
     const body = this.add
       .text(640, 348, bodyMsg, {

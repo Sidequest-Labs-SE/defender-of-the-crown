@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
 import { GameState } from '../core/GameState';
-import { SAXON_LORDS } from '../data/lords';
+import { SAXON_LORDS, NORMAN_LORDS, ALL_LORDS } from '../data/lords';
 import { Lord, getCinemawareStatRating } from '../core/types';
-import { PALETTE, PALETTE_HEX } from '../data/palette';
+import { PALETTE, PALETTE_HEX, SIDEQUEST_PALETTE, SIDEQUEST_PALETTE_HEX } from '../data/palette';
 import { AudioManager } from '../utils/AudioManager';
+import { PixelArtGenerator } from '../utils/PixelArtGenerator';
+import { SidequestArtGenerator } from '../utils/SidequestArtGenerator';
 
 interface LordCardUI {
   id: string;
@@ -15,7 +17,10 @@ interface LordCardUI {
 
 export class CharacterSelectScene extends Phaser.Scene {
   private selectedLordId = 'ivanhoe';
+  private selectedFaction: 'saxon' | 'norman' = 'saxon';
   private lordCards: LordCardUI[] = [];
+  private activeHitRects: Phaser.GameObjects.Rectangle[] = [];
+  private headerContainer!: Phaser.GameObjects.Container;
   private lastClickTime = 0;
   private isStarting = false;
 
@@ -32,12 +37,15 @@ export class CharacterSelectScene extends Phaser.Scene {
   private statBarsGraphics!: Phaser.GameObjects.Graphics;
 
   private confirmBtnContainer!: Phaser.GameObjects.Container;
+  private confirmBtnText!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'CharacterSelectScene' });
   }
 
   create(): void {
+    PixelArtGenerator.generateAll(this);
+    SidequestArtGenerator.generateAll(this);
     GameState.getInstance().setPhase('SELECT_CHARACTER');
     this.lordCards = [];
     this.isStarting = false;
@@ -52,12 +60,13 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   private createBackground(): void {
+    const isSidequest = GameState.getInstance().isSidequestEdition();
     const bg = this.add.graphics();
-    bg.fillStyle(0x1f222b, 1);
+    bg.fillStyle(isSidequest ? SIDEQUEST_PALETTE.SHADOW_ABYSS : 0x1f222b, 1);
     bg.fillRect(0, 0, 1280, 720);
 
     // Subtle stone masonry lines
-    bg.fillStyle(0x13151c, 0.55);
+    bg.fillStyle(isSidequest ? SIDEQUEST_PALETTE.MASONRY_SHADOW : 0x13151c, 0.55);
     for (let y = 0; y < 720; y += 36) {
       bg.fillRect(0, y, 1280, 2);
       const offset = y % 72 === 0 ? 0 : 60;
@@ -65,33 +74,158 @@ export class CharacterSelectScene extends Phaser.Scene {
         bg.fillRect(x, y, 2, 36);
       }
     }
+
+    if (isSidequest) {
+      // Warm council-hall torchlight halos in upper corners
+      bg.fillStyle(SIDEQUEST_PALETTE.TORCH_AMBER, 0.08);
+      bg.fillCircle(90, 90, 210);
+      bg.fillCircle(1190, 90, 210);
+    }
   }
 
   private createHeader(): void {
-    const headerBg = this.add.graphics();
-    headerBg.fillStyle(PALETTE.WOOD_DARK, 0.96);
-    headerBg.fillRoundedRect(60, 20, 1160, 58, 6);
-    headerBg.lineStyle(2.5, PALETTE.GOLD_DARK, 1);
-    headerBg.strokeRoundedRect(60, 20, 1160, 58, 6);
+    if (this.headerContainer) {
+      this.headerContainer.destroy();
+    }
+    this.headerContainer = this.add.container(0, 0);
 
-    this.add
-      .text(640, 49, '★  CHOOSE THY SAXON CHAMPION  ★', {
+    const isSidequest = GameState.getInstance().isSidequestEdition();
+    const headerBg = this.add.graphics();
+    headerBg.fillStyle(
+      isSidequest ? SIDEQUEST_PALETTE.OAK_SHADOW : PALETTE.WOOD_DARK,
+      0.96
+    );
+    headerBg.fillRoundedRect(60, 20, 1160, 58, 6);
+    headerBg.lineStyle(
+      2.5,
+      isSidequest ? SIDEQUEST_PALETTE.GOLD_GLEAM : PALETTE.GOLD_DARK,
+      1
+    );
+    headerBg.strokeRoundedRect(60, 20, 1160, 58, 6);
+    this.headerContainer.add(headerBg);
+
+    if (!isSidequest) {
+      const title = this.add
+        .text(640, 49, '★  CHOOSE THY SAXON CHAMPION  ★', {
+          fontFamily: 'Cinzel, Georgia, serif',
+          fontSize: '26px',
+          fontStyle: 'bold',
+          color: PALETTE_HEX.GOLD_BRIGHT,
+          letterSpacing: 3,
+          resolution: 2,
+        })
+        .setOrigin(0.5);
+      this.headerContainer.add(title);
+      return;
+    }
+
+    // SIDEQUEST LABS: Title + Faction Toggle Tabs [ 🛡 SAXON LORDS (4) ] vs [ ⚔ NORMAN LORDS (3) ]
+    const title = this.add
+      .text(210, 49, '★ CHOOSE THY LORD ★', {
         fontFamily: 'Cinzel, Georgia, serif',
-        fontSize: '26px',
+        fontSize: '18px',
         fontStyle: 'bold',
-        color: PALETTE_HEX.GOLD_BRIGHT,
-        letterSpacing: 3,
+        color: SIDEQUEST_PALETTE_HEX.GOLD_SPECULAR,
+        letterSpacing: 2,
         resolution: 2,
       })
       .setOrigin(0.5);
+    this.headerContainer.add(title);
+
+    const isSax = this.selectedFaction === 'saxon';
+    const saxTab = this.addFactionTab(480, 49, '🛡  SAXON LORDS (4)', isSax, () => {
+      if (this.selectedFaction !== 'saxon') {
+        this.selectedFaction = 'saxon';
+        this.createHeader();
+        this.createLordCards();
+        this.selectLord('ivanhoe');
+      }
+    });
+
+    const normTab = this.addFactionTab(750, 49, '⚔  NORMAN LORDS (3)', !isSax, () => {
+      if (this.selectedFaction !== 'norman') {
+        this.selectedFaction = 'norman';
+        this.createHeader();
+        this.createLordCards();
+        this.selectLord('malvoisin');
+      }
+    });
+    this.headerContainer.add([saxTab, normTab]);
+
+    const editionBadge = this.add
+      .text(1204, 49, '👑 SIDEQUEST LABS', {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: SIDEQUEST_PALETTE_HEX.GOLD_GLEAM,
+        backgroundColor: SIDEQUEST_PALETTE_HEX.CRIMSON_SHADOW,
+        padding: { x: 8, y: 4 },
+        resolution: 2,
+      })
+      .setOrigin(1, 0.5);
+    this.headerContainer.add(editionBadge);
+  }
+
+  private addFactionTab(
+    x: number,
+    y: number,
+    text: string,
+    isActive: boolean,
+    onClick: () => void
+  ): Phaser.GameObjects.Container {
+    const w = 220;
+    const h = 38;
+    const tab = this.add.container(x, y);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(
+      isActive ? SIDEQUEST_PALETTE.GOLD_ROYAL : SIDEQUEST_PALETTE.SHADOW_SLATE,
+      0.95
+    );
+    bg.fillRoundedRect(-w / 2, -h / 2, w, h, 6);
+    bg.lineStyle(
+      2,
+      isActive ? SIDEQUEST_PALETTE.GOLD_SPECULAR : SIDEQUEST_PALETTE.BRONZE_SHADOW,
+      1
+    );
+    bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 6);
+    tab.add(bg);
+
+    const label = this.add
+      .text(0, 0, text, {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '13.5px',
+        fontStyle: 'bold',
+        color: isActive ? '#140D05' : PALETTE_HEX.PARCHMENT_LIGHT,
+        resolution: 2,
+      })
+      .setOrigin(0.5);
+    tab.add(label);
+
+    const hit = this.add.rectangle(0, 0, w, h, 0x000000, 0);
+    hit.setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', () => {
+      AudioManager.playUiClick();
+      onClick();
+    });
+    tab.add(hit);
+
+    return tab;
   }
 
   private createLordCards(): void {
-    const lords = Object.values(SAXON_LORDS);
-    const cardWidth = 264;
+    const isSidequest = GameState.getInstance().isSidequestEdition();
+    this.lordCards.forEach((c) => c.container.destroy());
+    this.lordCards = [];
+    this.activeHitRects.forEach((h) => h.destroy());
+    this.activeHitRects = [];
+
+    const isNorman = isSidequest && this.selectedFaction === 'norman';
+    const lords = isNorman ? Object.values(NORMAN_LORDS) : Object.values(SAXON_LORDS);
+    const cardWidth = isNorman ? 290 : 264;
     const cardHeight = 208;
-    const startX = 192;
-    const spacingX = 298;
+    const startX = isNorman ? 280 : 192;
+    const spacingX = isNorman ? 360 : 298;
     const cardY = 204;
 
     lords.forEach((lord, index) => {
@@ -102,20 +236,49 @@ export class CharacterSelectScene extends Phaser.Scene {
       const bg = this.add.graphics();
       bg.fillStyle(PALETTE.BLACK, 0.5);
       bg.fillRoundedRect(-cardWidth / 2 + 4, -cardHeight / 2 + 5, cardWidth, cardHeight, 6);
-      bg.fillStyle(PALETTE.WOOD_DARK, 0.96);
+      bg.fillStyle(
+        isSidequest ? SIDEQUEST_PALETTE.SHADOW_SLATE : PALETTE.WOOD_DARK,
+        0.96
+      );
       bg.fillRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 6);
-      bg.lineStyle(2, PALETTE.WOOD_MID, 1);
+      bg.lineStyle(
+        2,
+        isSidequest ? SIDEQUEST_PALETTE.GOLD_BURNISHED : PALETTE.WOOD_MID,
+        1
+      );
       bg.strokeRoundedRect(-cardWidth / 2, -cardHeight / 2, cardWidth, cardHeight, 6);
       container.add(bg);
 
       // Crisp 2x Retro Pixel-Art Portrait (96x96) & Shield (66x84)
+      const portraitKey = SidequestArtGenerator.getPortraitKey(
+        this,
+        lord.id,
+        isSidequest
+      );
       const portrait = this.add
-        .image(-48, -24, `portrait_${lord.id}`)
+        .image(-48, -24, portraitKey)
         .setDisplaySize(96, 96);
       container.add(portrait);
 
+      if (isSidequest) {
+        SidequestArtGenerator.addGleamingFrame(
+          this,
+          container,
+          -48,
+          -24,
+          96,
+          96,
+          SIDEQUEST_PALETTE.GOLD_GLEAM
+        );
+      }
+
+      const shieldKey = SidequestArtGenerator.getShieldKey(
+        this,
+        lord.id,
+        isSidequest
+      );
       const shield = this.add
-        .image(56, -24, `shield_${lord.id}`)
+        .image(56, -24, shieldKey)
         .setDisplaySize(60, 76);
       container.add(shield);
 
@@ -127,7 +290,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       const nameText = this.add
         .text(0, 67, lord.name.toUpperCase(), {
           fontFamily: 'Cinzel, Georgia, serif',
-          fontSize: '15px',
+          fontSize: isNorman ? '13.5px' : '15px',
           fontStyle: 'bold',
           color: PALETTE_HEX.PARCHMENT_LIGHT,
           resolution: 2,
@@ -185,6 +348,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       });
 
       this.lordCards.push({ id: lord.id, container, selectionBorder, hoverBorder, hitRect });
+      this.activeHitRects.push(hitRect);
     });
   }
 
@@ -350,6 +514,7 @@ export class CharacterSelectScene extends Phaser.Scene {
         resolution: 2,
       })
       .setOrigin(0.5);
+    this.confirmBtnText = btnText;
     this.confirmBtnContainer.add(btnText);
 
     const hitZone = this.add.zone(0, 0, btnWidth + 12, btnHeight + 12);
@@ -375,18 +540,23 @@ export class CharacterSelectScene extends Phaser.Scene {
   private createKeyboardShortcuts(): void {
     if (!this.input.keyboard) return;
 
-    const lordIds = ['ivanhoe', 'cedric', 'geoffrey', 'wolfric'];
+    const getLordIds = () =>
+      this.selectedFaction === 'norman'
+        ? ['malvoisin', 'frontdeboeuf', 'boisguilbert']
+        : ['ivanhoe', 'cedric', 'geoffrey', 'wolfric'];
 
     const selectByIndex = (index: number) => {
-      if (index >= 0 && index < lordIds.length) {
-        this.selectLord(lordIds[index]);
+      const ids = getLordIds();
+      if (index >= 0 && index < ids.length) {
+        this.selectLord(ids[index]);
       }
     };
 
     const cycleLord = (delta: number) => {
-      const currentIndex = lordIds.indexOf(this.selectedLordId);
-      const newIndex = (currentIndex + delta + lordIds.length) % lordIds.length;
-      this.selectLord(lordIds[newIndex]);
+      const ids = getLordIds();
+      const currentIndex = ids.indexOf(this.selectedLordId);
+      const newIndex = (currentIndex + delta + ids.length) % ids.length;
+      this.selectLord(ids[newIndex]);
     };
 
     this.input.keyboard.on('keydown-ONE', () => selectByIndex(0));
@@ -402,15 +572,33 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-LEFT', () => cycleLord(-1));
     this.input.keyboard.on('keydown-RIGHT', () => cycleLord(1));
 
+    if (GameState.getInstance().isSidequestEdition()) {
+      this.input.keyboard.on('keydown-TAB', (e: KeyboardEvent) => {
+        if (e && e.preventDefault) e.preventDefault();
+        const nextFaction = this.selectedFaction === 'saxon' ? 'norman' : 'saxon';
+        this.selectedFaction = nextFaction;
+        this.createHeader();
+        this.createLordCards();
+        this.selectLord(nextFaction === 'norman' ? 'malvoisin' : 'ivanhoe');
+      });
+    }
+
     this.input.keyboard.on('keydown-ENTER', () => this.startCampaign());
     this.input.keyboard.on('keydown-SPACE', () => this.startCampaign());
   }
 
   public selectLord(lordId: string, playSound = true): void {
-    const lord: Lord = SAXON_LORDS[lordId];
+    const lord: Lord = (ALL_LORDS as Record<string, Lord>)[lordId] ?? SAXON_LORDS[lordId];
     if (!lord) return;
 
     this.selectedLordId = lordId;
+    if (this.confirmBtnText) {
+      this.confirmBtnText.setText(
+        lord.faction === 'norman'
+          ? '⚔   SWEAR FEALTY & BEGIN CONQUEST   ⚔'
+          : '⚔   SWEAR OATH & BEGIN CAMPAIGN   ⚔'
+      );
+    }
 
     if (playSound) {
       const now = Date.now();
@@ -457,7 +645,8 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.isStarting = true;
 
     AudioManager.playUiClick();
-    GameState.getInstance().startNewCampaign(this.selectedLordId);
+    const gs = GameState.getInstance();
+    gs.startNewCampaign(this.selectedLordId, gs.getEdition());
 
     this.cameras.main.fadeOut(300, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {

@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "npx --yes tsx test-sprint1.ts && npx --yes tsx test-sprint2.ts && npx --yes tsx test-sprint3.ts && npx --yes tsx test-sprint4.ts && npx --yes tsx test-sprint5.ts && npx --yes tsx test-sprint6.ts"
+    "test": "npx --yes tsx test-sprint1.ts && npx --yes tsx test-sprint2.ts && npx --yes tsx test-sprint3.ts && npx --yes tsx test-sprint4.ts && npx --yes tsx test-sprint5.ts && npx --yes tsx test-sprint6.ts && npx --yes tsx test-sprint7.ts && npx --yes tsx test-sprint8.ts && npx --yes tsx test-sprint9.ts"
   },
   "dependencies": {
     "phaser": "^3.88.2"

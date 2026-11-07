@@ -112,8 +112,10 @@ export interface SiegeSession {
   defenderGarrison: Army;
   defenderFieldArmy: Army;
 
-  /** Castle structural integrity: 100 (intact) .. 0 (breached) */
+  /** Castle structural integrity: 100 (intact) .. 0 (breached), up to 150 for Royal Keep */
   wallIntegrity: number;
+  maxWallIntegrity?: number;
+  isRoyalKeep?: boolean;
   wallBreached: boolean;
   wallScorched: boolean;
   isOnFire: boolean;
@@ -141,6 +143,7 @@ export interface SiegeSession {
   volleyHistory: SiegeVolleyReport[];
   lastVolleyReport: SiegeVolleyReport | null;
   abandonedResult: BattleResult | null;
+  attackerHasGreekFireSiphon?: boolean;
 }
 
 export interface CreateSiegeSessionOptions {
@@ -180,6 +183,15 @@ export class SiegeEngine {
   public static calculateMaxVolleys(catapults: number): number {
     if (catapults <= 0) return 0;
     return Math.min(9, 5 + (catapults - 1) * 2);
+  }
+
+  /**
+   * Computes defender Counter-Battery fire chance: base 15% + 2% per Archer (up to +20% bonus = 35% max).
+   */
+  public static calculateCounterBatteryChance(defenderArmy: Army): number {
+    const defArchers = defenderArmy.archers ?? 0;
+    const archerBonus = Math.min(0.2, defArchers * 0.02);
+    return Number((this.COUNTER_FIRE_CHANCE + archerBonus).toFixed(4));
   }
 
   /**
@@ -246,13 +258,19 @@ export class SiegeEngine {
   }
 
   /**
-   * Computes dynamic Castle Fortification Multiplier scaled by remaining wallIntegrity (0..100):
-   * 1.0 + 0.25 * (wallIntegrity / 100).
-   * At 100% -> 1.25x (+25%); at 0% (Breached) -> 1.00x (0% bonus).
+   * Computes dynamic Castle Fortification Multiplier scaled by remaining wallIntegrity:
+   * Standard Castle: 1.0 + 0.25 * (wallIntegrity / 100) -> 1.25x (+25%)
+   * Royal Keep: 1.0 + 0.40 * (wallIntegrity / 150) -> 1.40x (+40%)
+   * At 0% (Breached) -> 1.00x (0% bonus).
    */
-  public static getDynamicCastleMultiplier(wallIntegrity: number): number {
-    const clamped = Math.max(0, Math.min(100, wallIntegrity));
-    return Number((1.0 + 0.25 * (clamped / 100)).toFixed(4));
+  public static getDynamicCastleMultiplier(
+    wallIntegrity: number,
+    isRoyalKeep = false
+  ): number {
+    const maxIntegrity = isRoyalKeep ? 150 : 100;
+    const clamped = Math.max(0, Math.min(maxIntegrity, wallIntegrity));
+    const bonus = isRoyalKeep ? 0.4 : 0.25;
+    return Number((1.0 + bonus * (clamped / maxIntegrity)).toFixed(4));
   }
 
   /**
@@ -376,8 +394,17 @@ export class SiegeEngine {
       defenderGarrison: { ...initGarrison },
       defenderFieldArmy: { ...initDefField },
 
-      wallIntegrity: 100,
-      wallBreached: false,
+      wallIntegrity: Math.max(
+        0,
+        (territory.isRoyalKeep ? 150 : 100) - (territory.sabotagedWallDamage ?? 0)
+      ),
+      maxWallIntegrity: territory.isRoyalKeep ? 150 : 100,
+      isRoyalKeep: Boolean(territory.isRoyalKeep),
+      wallBreached:
+        Math.max(
+          0,
+          (territory.isRoyalKeep ? 150 : 100) - (territory.sabotagedWallDamage ?? 0)
+        ) <= 0,
       wallScorched: false,
       isOnFire: false,
       isPlagueInfected: false,
@@ -399,6 +426,9 @@ export class SiegeEngine {
           ? options.enableCounterFire
           : !deterministic,
       rngState: seed >>> 0,
+      attackerHasGreekFireSiphon: Boolean(
+        attacker.relicIds?.includes('greek_fire_siphon')
+      ),
 
       retreatPenaltyLosses: { soldiers: 0, knights: 0, catapults: 0 },
       siegeLog: [],
@@ -629,6 +659,15 @@ export class SiegeEngine {
       }
     }
 
+    if (
+      session.attackerHasGreekFireSiphon &&
+      (ammo === 'BOULDER' || ammo === 'GREEK_FIRE')
+    ) {
+      if (impactZone === 'WALL_HIT' || impactZone === 'OVER_WALL_COURTYARD') {
+        wallDamage += 15;
+      }
+    }
+
     // 2. Apply Wall Structural Degradation & Check Breach
     session.wallIntegrity = Math.max(0, session.wallIntegrity - wallDamage);
     const wallIntegrityAfter = session.wallIntegrity;
@@ -673,8 +712,13 @@ export class SiegeEngine {
       defendersAlive &&
       session.shotsRemaining > 0
     ) {
+      const defArchers =
+        (session.defenderGarrison.archers ?? 0) +
+        (session.defenderFieldArmy.archers ?? 0);
+      const archerBonus = Math.min(0.2, defArchers * 0.02);
+      const totalCounterChance = this.COUNTER_FIRE_CHANCE + archerBonus;
       const counterRoll = this.nextRandom(session);
-      if (counterRoll < this.COUNTER_FIRE_CHANCE) {
+      if (counterRoll < totalCounterChance) {
         counterFireTriggered = true;
         attackerCounterLosses = this.applyCounterFireToAttacker(session);
         if (attackerCounterLosses.catapults > 0) {

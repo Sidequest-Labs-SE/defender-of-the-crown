@@ -7,6 +7,7 @@ import { SiegeScene } from './scenes/SiegeScene';
 import { BattleScene } from './scenes/BattleScene';
 import { SwordplayScene } from './scenes/SwordplayScene';
 import { JoustScene } from './scenes/JoustScene';
+import { ArcheryScene } from './scenes/ArcheryScene';
 
 /**
  * Defender of the Crown - 16:9 HD Hybrid Edition (1280x720)
@@ -37,6 +38,7 @@ const config: Phaser.Types.Core.GameConfig = {
     BattleScene,
     SwordplayScene,
     JoustScene,
+    ArcheryScene,
   ],
 };
 

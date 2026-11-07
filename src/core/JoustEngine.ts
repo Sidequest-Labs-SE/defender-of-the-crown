@@ -59,6 +59,7 @@ export interface JoustSession {
   rngState: number;
   committed: boolean;
   committedSummary?: JoustOutcomeSummary;
+  playerHasMilanese?: boolean;
   tickerLog: string[];
 }
 
@@ -378,12 +379,19 @@ export class JoustEngine {
       ? state.territories[context.rivalWagerTerritoryId]
       : undefined;
 
+    const playerHasMilanese =
+      state.edition === 'SIDEQUEST_LABS' &&
+      Boolean(challenger.relicIds?.includes('milanese_plate'));
+    const effectiveChallengerJousting = playerHasMilanese
+      ? Math.min(10, challenger.jousting + 2)
+      : challenger.jousting;
+
     const challengerDuelist: JoustDuelist = {
       id: challenger.id,
       name: challenger.name,
       title: challenger.title,
       faction: challenger.faction,
-      jousting: Math.max(1, Math.min(10, challenger.jousting)),
+      jousting: Math.max(1, Math.min(10, effectiveChallengerJousting)),
       portraitKey: `portrait_${challenger.id}`,
       shieldKey: `shield_${challenger.id}`,
     };
@@ -425,6 +433,7 @@ export class JoustEngine {
       deterministic: Boolean(options?.deterministic),
       rngState: (options?.seed ?? 0x1986c0de) >>> 0,
       committed: false,
+      playerHasMilanese,
       tickerLog: [introMsg, `PASS 1 OF 3 — Couch thy lance and sound the charge!`],
     };
   }
@@ -454,6 +463,12 @@ export class JoustEngine {
 
     let playerUnhorsed = rivalZone === 'UNHORSED';
     let rivalUnhorsed = playerZone === 'UNHORSED';
+
+    if (session.playerHasMilanese && playerUnhorsed) {
+      if (rng() < 0.15) {
+        playerUnhorsed = false; // Milanese plate absorbs center impact!
+      }
+    }
 
     const playerFoul = playerZone === 'FOUL_HIT_HORSE';
     const rivalFoul = rivalZone === 'FOUL_HIT_HORSE';
@@ -654,6 +669,16 @@ export class JoustEngine {
     let chronicleMessage = '';
 
     const isPlayerVictory = session.status === 'PLAYER_WON';
+
+    if (state.edition === 'SIDEQUEST_LABS') {
+      if (isPlayerVictory && challenger && challenger.isPlayer) {
+        GameState.getInstance().awardRelic(challenger.id);
+      }
+      if (session.endReason === 'UNHORSED' && opponent && !opponent.isPlayer) {
+        state.nemesisLordId = opponent.id;
+        opponent.hasVendettaAgainstPlayer = true;
+      }
+    }
 
     if (session.stakesType === 'FAME') {
       if (isPlayerVictory) {
