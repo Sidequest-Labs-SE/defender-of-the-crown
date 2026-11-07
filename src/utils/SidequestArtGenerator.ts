@@ -615,7 +615,7 @@ export class SidequestArtGenerator {
 
   private static drawLordBust96(
     ctx: CanvasRenderingContext2D,
-    lord: Lord,
+    lord: Lord | Partial<Lord> | undefined,
     cfg: {
       hair: string;
       hairLight: string;
@@ -628,6 +628,12 @@ export class SidequestArtGenerator {
       scar?: boolean;
     }
   ): void {
+    const safeLord = lord ?? {
+      id: 'garrison',
+      name: 'Garrison Commander',
+      faction: 'norman',
+    };
+    const faction = safeLord.faction ?? 'saxon';
     const steelDark =
       cfg.armorTone === 'dark_iron'
         ? '#242A36'
@@ -728,7 +734,7 @@ export class SidequestArtGenerator {
     ctx.fillRect(37, 37, 7, 4);
     ctx.fillRect(52, 37, 7, 4);
     const irisColor =
-      (lord?.faction ?? 'saxon') === 'saxon'
+      faction === 'saxon'
         ? SIDEQUEST_PALETTE_HEX.AZURE_MID
         : SIDEQUEST_PALETTE_HEX.SHADOW_ABYSS;
     ctx.fillStyle = irisColor;
@@ -1017,13 +1023,15 @@ export class SidequestArtGenerator {
       secondary: number;
       accent: number;
       symbol: string;
-    }> = Object.values(ALL_LORDS).map((l) => ({
-      id: l.id,
-      primary: l.heraldry.primaryColor,
-      secondary: l.heraldry.secondaryColor,
-      accent: l.heraldry.accentColor,
-      symbol: l.heraldry.symbol,
-    }));
+    }> = Object.values(ALL_LORDS)
+      .filter((l): l is Lord => Boolean(l && l.id && l.heraldry))
+      .map((l) => ({
+        id: l.id,
+        primary: l.heraldry.primaryColor,
+        secondary: l.heraldry.secondaryColor,
+        accent: l.heraldry.accentColor,
+        symbol: l.heraldry.symbol,
+      }));
 
     entries.push({
       id: 'garrison',
